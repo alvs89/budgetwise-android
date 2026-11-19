@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
@@ -29,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +69,7 @@ fun ActivityScreen(
   onEditTransaction: (TransactionEntity) -> Unit,
   onDeleteTransaction: (TransactionEntity) -> Unit,
   onAddTransaction: () -> Unit,
+  onExportData: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   var showSortMenu by remember { mutableStateOf(false) }
@@ -128,31 +131,48 @@ fun ActivityScreen(
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
-          Box {
-            OutlinedButton(
-              onClick = { showSortMenu = true },
-              modifier = Modifier.testTag("sort_button"),
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            IconButton(
+              onClick = onExportData,
+              modifier = Modifier
+                .minimumInteractiveComponentSize()
+                .testTag("activity_export_button"),
             ) {
-              Icon(Icons.Rounded.SwapVert, contentDescription = null)
-              Text(
-                text = filter.sortOrder.label,
-                maxLines = 1,
-                softWrap = false,
-                modifier = Modifier.padding(start = 6.dp),
+              Icon(
+                imageVector = Icons.Rounded.FileDownload,
+                contentDescription = "Export financial report",
+                tint = MaterialTheme.colorScheme.onBackground,
               )
             }
-            DropdownMenu(
-              expanded = showSortMenu,
-              onDismissRequest = { showSortMenu = false },
-            ) {
-              TransactionSortOrder.entries.forEach { order ->
-                DropdownMenuItem(
-                  text = { Text(order.label) },
-                  onClick = {
-                    onSortOrderChange(order)
-                    showSortMenu = false
-                  },
+            Box {
+              OutlinedButton(
+                onClick = { showSortMenu = true },
+                modifier = Modifier.testTag("sort_button"),
+              ) {
+                Icon(Icons.Rounded.SwapVert, contentDescription = null)
+                Text(
+                  text = filter.sortOrder.label,
+                  maxLines = 1,
+                  softWrap = false,
+                  modifier = Modifier.padding(start = 6.dp),
                 )
+              }
+              DropdownMenu(
+                expanded = showSortMenu,
+                onDismissRequest = { showSortMenu = false },
+              ) {
+                TransactionSortOrder.entries.forEach { order ->
+                  DropdownMenuItem(
+                    text = { Text(order.label) },
+                    onClick = {
+                      onSortOrderChange(order)
+                      showSortMenu = false
+                    },
+                  )
+                }
               }
             }
           }

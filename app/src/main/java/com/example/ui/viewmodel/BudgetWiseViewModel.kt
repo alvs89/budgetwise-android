@@ -117,6 +117,7 @@ data class BudgetWiseUiState(
   val allTimeSavingsRatePercent: BigDecimal = BigDecimal.ZERO,
   val totalReservedSavings: BigDecimal = BigDecimal.ZERO,
   val budgetSummaries: List<BudgetSummary> = emptyList(),
+  val allBudgets: List<BudgetEntity> = emptyList(),
   val totalBudgetLimit: BigDecimal = BigDecimal.ZERO,
   val totalBudgetSpent: BigDecimal = BigDecimal.ZERO,
   val goalSummaries: List<SavingsGoalSummary> = emptyList(),
@@ -265,6 +266,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       allTimeSavingsRatePercent = allTimeSavingsRate,
       totalReservedSavings = totalReservedSavings,
       budgetSummaries = budgetSummaries,
+      allBudgets = core.budgets,
       totalBudgetLimit = totalBudgetLimit,
       totalBudgetSpent = totalBudgetSpent,
       goalSummaries = goalSummaries,
@@ -680,6 +682,12 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     viewModelScope.launch {
       repository.clearAllUserData()
       _snackbarMessages.tryEmit("All financial records cleared")
+    }
+  }
+
+  fun notifyUser(message: String) {
+    if (message.isNotBlank()) {
+      _snackbarMessages.tryEmit(message)
     }
   }
 

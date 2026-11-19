@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteForever
+import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockReset
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -110,6 +112,7 @@ fun SettingsScreen(
   onLockAppNow: () -> Unit,
   onAddCategory: (String, TransactionType, String) -> Unit,
   onDeleteCategory: (CategoryEntity) -> Unit,
+  onExportData: () -> Unit,
   onResetDemoData: () -> Unit,
   onClearAllData: () -> Unit,
 ) {
@@ -502,6 +505,19 @@ fun SettingsScreen(
           FintechCard(modifier = Modifier.fillMaxWidth()) {
             SettingsCardHeader(icon = Icons.Rounded.Storage, title = "Data & Demonstration Records")
             Spacer(modifier = Modifier.height(10.dp))
+            FilledTonalButton(
+              onClick = onExportData,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("settings_export_data_button"),
+            ) {
+              Icon(Icons.Rounded.FileDownload, contentDescription = null)
+              Text(
+                text = stringResource(R.string.export_action_label),
+                modifier = Modifier.padding(start = 8.dp),
+              )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(
               onClick = { showResetConfirm = true },
               modifier = Modifier

@@ -77,6 +77,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.R
 import com.example.data.local.entity.TransactionEntity
 import com.example.ui.components.ConfirmationDialog
+import com.example.ui.components.ExportReportDialog
 import com.example.ui.components.FinancialChatSheet
 import com.example.ui.components.LaunchSplashOverlay
 import com.example.ui.components.LocalIsBalanceHidden
@@ -173,6 +174,15 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
     var editingTransaction by remember { mutableStateOf<TransactionEntity?>(null) }
     var pendingDeleteFromSheet by remember { mutableStateOf<TransactionEntity?>(null) }
     var showChatSheet by rememberSaveable { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
+
+    if (showExportDialog && !isAppLocked) {
+      ExportReportDialog(
+        uiState = uiState,
+        onExportFeedback = viewModel::notifyUser,
+        onDismiss = { showExportDialog = false },
+      )
+    }
 
     if (showChatSheet && !isAppLocked) {
       FinancialChatSheet(
@@ -398,6 +408,7 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                   editingTransaction = null
                   showTransactionSheet = true
                 },
+                onExportData = { showExportDialog = true },
               )
             }
             composable<BudgetsRoute> {
@@ -440,6 +451,7 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                 onLockAppNow = viewModel::lockAppNow,
                 onAddCategory = viewModel::addCustomCategory,
                 onDeleteCategory = viewModel::deleteCustomCategory,
+                onExportData = { showExportDialog = true },
                 onResetDemoData = viewModel::resetDemonstrationData,
                 onClearAllData = viewModel::clearAllRecords,
               )

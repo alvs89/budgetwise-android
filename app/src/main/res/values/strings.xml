@@ -56,4 +56,8 @@
     <string name="pin_recovery_disable_confirm_button">Turn Off</string>
     <string name="pin_lockout_message">Too many incorrect attempts. Try again.</string>
     <string name="pin_lockout_countdown_format">Keypad unlocks in %1$s</string>
+    <string name="export_dialog_title">Export Financial Data</string>
+    <string name="export_action_label">Export Report (CSV / PDF)</string>
+    <string name="export_csv_hint">Spreadsheet-ready with summary, budgets, and transactions for Excel or Google Sheets.</string>
+    <string name="export_pdf_hint">Clean, printable A4 financial statement with KPI cards, budget health, and ledger.</string>
 </resources>
