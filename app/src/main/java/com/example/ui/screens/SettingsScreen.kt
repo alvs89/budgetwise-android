@@ -25,14 +25,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockReset
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Pin
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -62,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -237,13 +243,13 @@ fun SettingsScreen(
         modifier = Modifier
           .widthIn(max = 760.dp)
           .fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
         // Profile
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
-            Text("Profile", style = MaterialTheme.typography.titleMedium)
+            SettingsCardHeader(icon = Icons.Rounded.Person, title = "Profile")
             Spacer(modifier = Modifier.height(10.dp))
             Row(
               modifier = Modifier.fillMaxWidth(),
@@ -272,7 +278,7 @@ fun SettingsScreen(
         // Preferred Currency
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
-            Text("Preferred Currency", style = MaterialTheme.typography.titleMedium)
+            SettingsCardHeader(icon = Icons.Rounded.Payments, title = "Preferred Currency")
             Spacer(modifier = Modifier.height(10.dp))
             CurrencyDropdown(
               selectedCurrencyCode = uiState.preferences.preferredCurrency,
@@ -284,7 +290,7 @@ fun SettingsScreen(
         // Theme & Privacy Display
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
-            Text("Appearance & Privacy", style = MaterialTheme.typography.titleMedium)
+            SettingsCardHeader(icon = Icons.Rounded.Palette, title = "Appearance & Privacy")
             Spacer(modifier = Modifier.height(10.dp))
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
               ThemeMode.entries.forEachIndexed { idx, mode ->
@@ -325,13 +331,7 @@ fun SettingsScreen(
         // Security & App Lock
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-              Icon(Icons.Rounded.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-              Text("Security & App Lock", style = MaterialTheme.typography.titleMedium)
-            }
+            SettingsCardHeader(icon = Icons.Rounded.Shield, title = "Security & App Lock")
             Spacer(modifier = Modifier.height(12.dp))
             Row(
               modifier = Modifier.fillMaxWidth(),
@@ -450,27 +450,20 @@ fun SettingsScreen(
         // Financial Categories
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f)) {
-                Text("Financial Categories", style = MaterialTheme.typography.titleMedium)
-                Text(
-                  text = "Tap × on custom categories to remove them",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              TextButton(
-                onClick = { showAddCategoryDialog = true },
-                modifier = Modifier.testTag("add_category_button"),
-              ) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-                Text("Add")
-              }
-            }
+            SettingsCardHeader(
+              icon = Icons.Rounded.Category,
+              title = "Financial Categories",
+              subtitle = "Tap × on custom categories to remove them",
+              trailing = {
+                TextButton(
+                  onClick = { showAddCategoryDialog = true },
+                  modifier = Modifier.testTag("add_category_button"),
+                ) {
+                  Icon(Icons.Rounded.Add, contentDescription = null)
+                  Text("Add")
+                }
+              },
+            )
             Spacer(modifier = Modifier.height(10.dp))
             Text("Income", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(4.dp))
@@ -507,7 +500,7 @@ fun SettingsScreen(
         // Data Management
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
-            Text("Data & Demonstration Records", style = MaterialTheme.typography.titleMedium)
+            SettingsCardHeader(icon = Icons.Rounded.Storage, title = "Data & Demonstration Records")
             Spacer(modifier = Modifier.height(10.dp))
             OutlinedButton(
               onClick = { showResetConfirm = true },
@@ -538,13 +531,7 @@ fun SettingsScreen(
         // App & Privacy Info
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-              Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-              Text("Privacy & Application Info", style = MaterialTheme.typography.titleMedium)
-            }
+            SettingsCardHeader(icon = Icons.Rounded.Lock, title = "Privacy & Application Info")
             Spacer(modifier = Modifier.height(8.dp))
             Text(
               text = stringResource(R.string.privacy_notice),
@@ -553,7 +540,7 @@ fun SettingsScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-              text = "BudgetWise · Version 1.0 · Offline Room & DataStore Persistence",
+              text = stringResource(R.string.app_info_footer),
               style = MaterialTheme.typography.labelMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -561,6 +548,50 @@ fun SettingsScreen(
         }
       }
     }
+  }
+}
+
+@Composable
+private fun SettingsCardHeader(
+  icon: ImageVector,
+  title: String,
+  subtitle: String? = null,
+  trailing: (@Composable () -> Unit)? = null,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Column(
+      modifier = Modifier.weight(1f),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Icon(
+          imageVector = icon,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(20.dp),
+        )
+        Text(
+          text = title,
+          style = MaterialTheme.typography.titleMedium,
+          color = MaterialTheme.colorScheme.onSurface,
+        )
+      }
+      if (subtitle != null) {
+        Text(
+          text = subtitle,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
+    trailing?.invoke()
   }
 }
 

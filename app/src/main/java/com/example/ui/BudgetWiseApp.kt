@@ -1,5 +1,14 @@
 package com.example.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,8 +17,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Insights
@@ -17,6 +31,7 @@ import androidx.compose.material.icons.outlined.PieChartOutline
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Insights
@@ -32,14 +47,14 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,6 +64,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -104,11 +121,22 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val isAppLocked by viewModel.isAppLocked.collectAsStateWithLifecycle()
   val chatUiState by viewModel.chatUiState.collectAsStateWithLifecycle()
-  val snackbarHostState = remember { SnackbarHostState() }
+  var activeToastMessage by remember { mutableStateOf<String?>(null) }
+  var isToastVisible by remember { mutableStateOf(false) }
+  var toastSequence by remember { mutableIntStateOf(0) }
 
   LaunchedEffect(Unit) {
     viewModel.snackbarMessages.collect { message ->
-      snackbarHostState.showSnackbar(message)
+      activeToastMessage = message
+      isToastVisible = true
+      toastSequence += 1
+    }
+  }
+
+  LaunchedEffect(toastSequence) {
+    if (toastSequence > 0) {
+      delay(2800L)
+      isToastVisible = false
     }
   }
 
@@ -224,7 +252,6 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
 
       Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
           if (!useNavRail && !isSettingsRoute) {
             NavigationBar {
@@ -423,6 +450,16 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
         }
         }
 
+        TopFloatingToastBanner(
+          visible = isToastVisible && !activeToastMessage.isNullOrBlank() && !isAppLocked && !showLaunchSplash,
+          message = activeToastMessage.orEmpty(),
+          onDismiss = { isToastVisible = false },
+          modifier = Modifier
+            .align(Alignment.TopCenter)
+            .statusBarsPadding()
+            .padding(top = 12.dp, start = 16.dp, end = 16.dp),
+        )
+
         PinLockOverlay(
           visible = !uiState.isLoading && isAppLocked,
           splashActive = showLaunchSplash,
@@ -438,6 +475,64 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
 
         LaunchSplashOverlay(
           visible = showLaunchSplash,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun TopFloatingToastBanner(
+  visible: Boolean,
+  message: String,
+  onDismiss: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  AnimatedVisibility(
+    visible = visible,
+    enter = slideInVertically(
+      animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+      initialOffsetY = { fullHeight -> -fullHeight - 24 },
+    ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+    exit = slideOutVertically(
+      animationSpec = tween(durationMillis = 200),
+      targetOffsetY = { fullHeight -> -fullHeight - 24 },
+    ) + fadeOut(animationSpec = tween(durationMillis = 160)),
+    modifier = modifier,
+  ) {
+    Surface(
+      onClick = onDismiss,
+      shape = RoundedCornerShape(14.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant,
+      contentColor = MaterialTheme.colorScheme.onSurface,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+      tonalElevation = 4.dp,
+      shadowElevation = 8.dp,
+      modifier = Modifier
+        .widthIn(max = 520.dp)
+        .fillMaxWidth()
+        .testTag("app_top_toast"),
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Rounded.CheckCircle,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(20.dp),
+        )
+        Text(
+          text = message,
+          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f),
         )
       }
     }

@@ -53,12 +53,12 @@ import androidx.compose.ui.window.DialogWindowProvider
 import com.example.data.local.entity.CategoryEntity
 
 /**
- * A keyboard-stable Material 3 form dialog anchored consistently near the upper viewport.
+ * A centered Material 3 form dialog with dynamic soft-keyboard avoidance.
  *
- * Unlike standard centered [androidx.compose.material3.AlertDialog] windows—which jump upward
- * whenever the soft keyboard appears and shrinks the window—this dialog uses
- * [WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING] with top-anchored positioning so the
- * dialog never shifts while typing, while gracefully allowing inner scrolling on compact screens.
+ * In its resting state, the dialog is centered both horizontally and vertically in the viewport.
+ * When the soft keyboard appears, [WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE] paired
+ * with [imePadding] smoothly centers the dialog within the visible area above the keyboard, while
+ * inner vertical scrolling ensures input fields and Cancel/Save actions remain accessible.
  */
 @Composable
 fun StableFormDialog(
@@ -78,7 +78,8 @@ fun StableFormDialog(
   ) {
     val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
     SideEffect {
-      dialogWindow?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+      @Suppress("DEPRECATION")
+      dialogWindow?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 
     Box(
@@ -92,8 +93,8 @@ fun StableFormDialog(
           indication = null,
           onClick = onDismissRequest,
         )
-        .padding(start = 20.dp, end = 20.dp, top = 48.dp, bottom = 16.dp),
-      contentAlignment = Alignment.TopCenter,
+        .padding(horizontal = 20.dp, vertical = 24.dp),
+      contentAlignment = Alignment.Center,
     ) {
       Surface(
         shape = AlertDialogDefaults.shape,

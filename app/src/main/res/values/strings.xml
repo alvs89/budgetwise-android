@@ -10,7 +10,8 @@
     <string name="nav_settings">Settings</string>
     <string name="fab_add_transaction">Add Transaction</string>
     <string name="cash_flow_disclaimer">Net cash flow is a summary of recorded transactions, not a verified bank balance.</string>
-    <string name="privacy_notice">All financial records are stored locally on your device using Room Database, and BudgetWise never requests bank credentials.</string>
+    <string name="privacy_notice">All financial records are stored securely and privately on your device. BudgetWise never requests bank credentials.</string>
+    <string name="app_info_footer">BudgetWise · Version 1.0 · Offline-First Storage</string>
     <string name="demo_badge">Demo</string>
     <string name="chat_fab_label">Open financial assistant chat</string>
     <string name="chat_title">BudgetWise Assistant</string>
