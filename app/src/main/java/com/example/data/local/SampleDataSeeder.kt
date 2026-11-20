@@ -15,22 +15,37 @@ import java.util.Calendar
 object SampleDataSeeder {
 
   fun defaultCategories(): List<CategoryEntity> = listOf(
-    // Income
-    CategoryEntity(name = "Allowance", type = TransactionType.INCOME, iconKey = "wallet", colorHex = 0xFF15803D, isDefault = true),
+    // Income (8)
     CategoryEntity(name = "Salary", type = TransactionType.INCOME, iconKey = "work", colorHex = 0xFF10B981, isDefault = true),
-    CategoryEntity(name = "Freelance", type = TransactionType.INCOME, iconKey = "laptop", colorHex = 0xFF0D9488, isDefault = true),
-    CategoryEntity(name = "Business", type = TransactionType.INCOME, iconKey = "store", colorHex = 0xFF2563EB, isDefault = true),
+    CategoryEntity(name = "Allowance", type = TransactionType.INCOME, iconKey = "wallet", colorHex = 0xFF0EA5A4, isDefault = true),
+    CategoryEntity(name = "Freelance", type = TransactionType.INCOME, iconKey = "laptop", colorHex = 0xFF0284C7, isDefault = true),
+    CategoryEntity(name = "Business", type = TransactionType.INCOME, iconKey = "store", colorHex = 0xFF3B82F6, isDefault = true),
+    CategoryEntity(name = "Investments", type = TransactionType.INCOME, iconKey = "trending_up", colorHex = 0xFF10B981, isDefault = true),
+    CategoryEntity(name = "Bonus", type = TransactionType.INCOME, iconKey = "bonus", colorHex = 0xFFEAB308, isDefault = true),
+    CategoryEntity(name = "Gifts & Refunds", type = TransactionType.INCOME, iconKey = "gift", colorHex = 0xFFDB2777, isDefault = true),
     CategoryEntity(name = "Other Income", type = TransactionType.INCOME, iconKey = "payments", colorHex = 0xFF64748B, isDefault = true),
-    // Expense
-    CategoryEntity(name = "Food and Dining", type = TransactionType.EXPENSE, iconKey = "restaurant", colorHex = 0xFF0F766E, isDefault = true),
-    CategoryEntity(name = "Transportation", type = TransactionType.EXPENSE, iconKey = "directions_bus", colorHex = 0xFF1D4ED8, isDefault = true),
-    CategoryEntity(name = "Education", type = TransactionType.EXPENSE, iconKey = "school", colorHex = 0xFF6D28D9, isDefault = true),
-    CategoryEntity(name = "Bills and Utilities", type = TransactionType.EXPENSE, iconKey = "receipt", colorHex = 0xFFD97706, isDefault = true),
-    CategoryEntity(name = "Shopping", type = TransactionType.EXPENSE, iconKey = "shopping_bag", colorHex = 0xFFDB2777, isDefault = true),
-    CategoryEntity(name = "Entertainment", type = TransactionType.EXPENSE, iconKey = "movie", colorHex = 0xFF0284C7, isDefault = true),
-    CategoryEntity(name = "Healthcare", type = TransactionType.EXPENSE, iconKey = "medical", colorHex = 0xFFDC2626, isDefault = true),
+    // Expense (22)
+    CategoryEntity(name = "Food and Dining", type = TransactionType.EXPENSE, iconKey = "restaurant", colorHex = 0xFF0EA5A4, isDefault = true),
+    CategoryEntity(name = "Groceries", type = TransactionType.EXPENSE, iconKey = "groceries", colorHex = 0xFF10B981, isDefault = true),
+    CategoryEntity(name = "Coffee & Snacks", type = TransactionType.EXPENSE, iconKey = "coffee", colorHex = 0xFFEA580C, isDefault = true),
+    CategoryEntity(name = "Transportation", type = TransactionType.EXPENSE, iconKey = "directions_bus", colorHex = 0xFF3B82F6, isDefault = true),
+    CategoryEntity(name = "Car & Fuel", type = TransactionType.EXPENSE, iconKey = "car", colorHex = 0xFF0284C7, isDefault = true),
     CategoryEntity(name = "Housing", type = TransactionType.EXPENSE, iconKey = "home", colorHex = 0xFF3B82F6, isDefault = true),
-    CategoryEntity(name = "Personal Care", type = TransactionType.EXPENSE, iconKey = "spa", colorHex = 0xFF059669, isDefault = true),
+    CategoryEntity(name = "Bills and Utilities", type = TransactionType.EXPENSE, iconKey = "bolt", colorHex = 0xFFEAB308, isDefault = true),
+    CategoryEntity(name = "Internet & Load", type = TransactionType.EXPENSE, iconKey = "wifi", colorHex = 0xFF0284C7, isDefault = true),
+    CategoryEntity(name = "Education", type = TransactionType.EXPENSE, iconKey = "school", colorHex = 0xFF7C3AED, isDefault = true),
+    CategoryEntity(name = "Healthcare", type = TransactionType.EXPENSE, iconKey = "medical", colorHex = 0xFFF43F5E, isDefault = true),
+    CategoryEntity(name = "Shopping", type = TransactionType.EXPENSE, iconKey = "shopping_bag", colorHex = 0xFFDB2777, isDefault = true),
+    CategoryEntity(name = "Electronics", type = TransactionType.EXPENSE, iconKey = "devices", colorHex = 0xFF6366F1, isDefault = true),
+    CategoryEntity(name = "Entertainment", type = TransactionType.EXPENSE, iconKey = "movie", colorHex = 0xFF6366F1, isDefault = true),
+    CategoryEntity(name = "Subscriptions", type = TransactionType.EXPENSE, iconKey = "subscriptions", colorHex = 0xFF7C3AED, isDefault = true),
+    CategoryEntity(name = "Personal Care", type = TransactionType.EXPENSE, iconKey = "spa", colorHex = 0xFF10B981, isDefault = true),
+    CategoryEntity(name = "Fitness & Sports", type = TransactionType.EXPENSE, iconKey = "fitness", colorHex = 0xFFEA580C, isDefault = true),
+    CategoryEntity(name = "Travel", type = TransactionType.EXPENSE, iconKey = "flight", colorHex = 0xFF0284C7, isDefault = true),
+    CategoryEntity(name = "Pets", type = TransactionType.EXPENSE, iconKey = "pets", colorHex = 0xFFEAB308, isDefault = true),
+    CategoryEntity(name = "Gifts & Charity", type = TransactionType.EXPENSE, iconKey = "charity", colorHex = 0xFFF43F5E, isDefault = true),
+    CategoryEntity(name = "Repairs", type = TransactionType.EXPENSE, iconKey = "repair", colorHex = 0xFF64748B, isDefault = true),
+    CategoryEntity(name = "Family & Kids", type = TransactionType.EXPENSE, iconKey = "family", colorHex = 0xFFDB2777, isDefault = true),
     CategoryEntity(name = "Other Expenses", type = TransactionType.EXPENSE, iconKey = "category", colorHex = 0xFF64748B, isDefault = true),
   )
 

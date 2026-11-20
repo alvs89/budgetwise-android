@@ -91,11 +91,11 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.local.entity.CategoryEntity
 import com.example.domain.AlertThresholdDefaults
-import com.example.domain.CategoryVisualMatcher
 import com.example.domain.ThemeMode
 import com.example.domain.TransactionType
 import com.example.domain.compactCategoryLabel
 import com.example.notifications.BudgetWiseNotificationManager
+import com.example.ui.components.CategoryCustomizeDialog
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.CurrencyDropdown
 import com.example.ui.components.FintechCard
@@ -106,7 +106,6 @@ import com.example.ui.components.budgetWiseSwitchColors
 import com.example.ui.components.categoryIcon
 import com.example.ui.components.categoryTint
 import com.example.ui.components.isBiometricAuthAvailable
-import com.example.ui.components.pickableCategoryIcons
 import com.example.ui.viewmodel.BudgetWiseUiState
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -129,7 +128,8 @@ fun SettingsScreen(
   onToggleBiometricUnlock: (Boolean) -> Unit,
   onDisableAppLock: () -> Unit,
   onLockAppNow: () -> Unit,
-  onAddCategory: (String, TransactionType, String) -> Unit,
+  onAddCategory: (String, TransactionType, String, Long) -> Unit,
+  onUpdateCategory: (CategoryEntity, String, String, Long) -> Unit,
   onDeleteCategory: (CategoryEntity) -> Unit,
   onExportData: () -> Unit,
   onResetDemoData: () -> Unit,
@@ -156,6 +156,7 @@ fun SettingsScreen(
     mutableStateOf(uiState.preferences.displayName)
   }
   var showAddCategoryDialog by remember { mutableStateOf(false) }
+  var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
   var showReminderTimePicker by remember { mutableStateOf(false) }
   var pendingDeleteCategory by remember { mutableStateOf<CategoryEntity?>(null) }
   var showResetConfirm by remember { mutableStateOf(false) }
@@ -198,13 +199,32 @@ fun SettingsScreen(
   }
 
   if (showAddCategoryDialog) {
-    AddCategoryDialog(
+    CategoryCustomizeDialog(
+      editingCategory = null,
       existingCategories = uiState.categories,
-      onAdd = { name, type, iconKey ->
-        onAddCategory(name, type, iconKey)
+      onSaveNew = { name, type, iconKey, colorHex ->
+        onAddCategory(name, type, iconKey, colorHex)
         showAddCategoryDialog = false
       },
+      onSaveEdit = { _, _, _, _ -> },
       onDismiss = { showAddCategoryDialog = false },
+    )
+  }
+
+  editingCategory?.let { target ->
+    CategoryCustomizeDialog(
+      editingCategory = target,
+      existingCategories = uiState.categories,
+      onSaveNew = { _, _, _, _ -> },
+      onSaveEdit = { existing, newName, iconKey, colorHex ->
+        onUpdateCategory(existing, newName, iconKey, colorHex)
+        editingCategory = null
+      },
+      onRequestDelete = { cat ->
+        editingCategory = null
+        pendingDeleteCategory = cat
+      },
+      onDismiss = { editingCategory = null },
     )
   }
 
@@ -773,7 +793,7 @@ fun SettingsScreen(
             SettingsCardHeader(
               icon = Icons.Rounded.Category,
               title = "Financial Categories",
-              subtitle = "Tap × on custom categories to remove them",
+              subtitle = "Tap any category to customize its icon & color",
               trailing = {
                 TextButton(
                   onClick = { showAddCategoryDialog = true },
@@ -794,8 +814,8 @@ fun SettingsScreen(
               uiState.categories.filter { it.type == TransactionType.INCOME }.forEach { cat ->
                 CategoryChipItem(
                   category = cat,
+                  onCustomize = { editingCategory = cat },
                   onRequestConfirmDelete = { pendingDeleteCategory = cat },
-                  onDirectDelete = { onDeleteCategory(cat) },
                 )
               }
             }
@@ -809,8 +829,8 @@ fun SettingsScreen(
               uiState.categories.filter { it.type == TransactionType.EXPENSE }.forEach { cat ->
                 CategoryChipItem(
                   category = cat,
+                  onCustomize = { editingCategory = cat },
                   onRequestConfirmDelete = { pendingDeleteCategory = cat },
-                  onDirectDelete = { onDeleteCategory(cat) },
                 )
               }
             }
@@ -931,8 +951,8 @@ private fun SettingsCardHeader(
 @Composable
 private fun CategoryChipItem(
   category: CategoryEntity,
+  onCustomize: () -> Unit,
   onRequestConfirmDelete: () -> Unit,
-  onDirectDelete: () -> Unit,
 ) {
   val categoryList = remember(category) { listOf(category) }
   val icon = categoryIcon(category.name, categoryList)
@@ -940,11 +960,7 @@ private fun CategoryChipItem(
 
   InputChip(
     selected = false,
-    onClick = {
-      if (!category.isDefault) {
-        onRequestConfirmDelete()
-      }
-    },
+    onClick = onCustomize,
     leadingIcon = {
       Icon(
         imageVector = icon,
@@ -973,7 +989,7 @@ private fun CategoryChipItem(
           modifier = Modifier
             .size(20.dp)
             .clip(CircleShape)
-            .clickable(onClick = onDirectDelete),
+            .clickable(onClick = onRequestConfirmDelete),
           contentAlignment = Alignment.Center,
         ) {
           Icon(
@@ -986,132 +1002,8 @@ private fun CategoryChipItem(
     } else {
       null
     },
+    modifier = Modifier.testTag(
+      "settings_category_chip_${category.name.lowercase().replace(Regex("[^a-z0-9]+"), "_")}"
+    ),
   )
-}
-
-@Composable
-private fun AddCategoryDialog(
-  existingCategories: List<CategoryEntity>,
-  onAdd: (name: String, type: TransactionType, iconKey: String) -> Unit,
-  onDismiss: () -> Unit,
-) {
-  var name by remember { mutableStateOf("") }
-  var type by remember { mutableStateOf(TransactionType.EXPENSE) }
-  var manualIconKey by remember { mutableStateOf<String?>(null) }
-  var error by remember { mutableStateOf<String?>(null) }
-
-  val iconOptions = remember(type) { pickableCategoryIcons(type) }
-  val autoIconKey = remember(name, type) { CategoryVisualMatcher.inferIconKey(name, type) }
-  val selectedIconKey = manualIconKey ?: autoIconKey
-  val isAutoMatched = manualIconKey == null
-  val iconRowState = rememberLazyListState()
-
-  LaunchedEffect(selectedIconKey, iconOptions) {
-    val idx = iconOptions.indexOfFirst { it.iconKey == selectedIconKey }
-    if (idx >= 0) {
-      iconRowState.animateScrollToItem((idx - 1).coerceAtLeast(0))
-    }
-  }
-
-  StableFormDialog(
-    onDismissRequest = onDismiss,
-    title = { Text("Add Financial Category", style = MaterialTheme.typography.titleLarge) },
-    confirmButton = {
-      Button(
-        onClick = {
-          val clean = name.trim()
-          val existingMatch = existingCategories.firstOrNull {
-            it.name.trim().equals(clean, ignoreCase = true)
-          }
-          when {
-            clean.isEmpty() -> error = "Enter a category name."
-            existingMatch != null -> {
-              error = "\"${existingMatch.name}\" already exists under ${existingMatch.type.label}."
-            }
-            else -> onAdd(clean, type, selectedIconKey)
-          }
-        },
-        modifier = Modifier.testTag("confirm_add_category_button"),
-      ) { Text("Add") }
-    },
-    dismissButton = {
-      TextButton(onClick = onDismiss) { Text("Cancel") }
-    },
-  ) {
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-      TransactionType.entries.forEachIndexed { idx, option ->
-        SegmentedButton(
-          selected = type == option,
-          onClick = {
-            type = option
-            manualIconKey = null
-          },
-          shape = SegmentedButtonDefaults.itemShape(idx, TransactionType.entries.size),
-        ) { Text(option.label) }
-      }
-    }
-    OutlinedTextField(
-      value = name,
-      onValueChange = {
-        name = it
-        error = null
-      },
-      label = { Text("Category Name") },
-      placeholder = { Text(if (type == TransactionType.INCOME) "e.g., Bonus, Dividends" else "e.g., Coffee, Pets, Gym") },
-      isError = error != null,
-      supportingText = error?.let { msg -> { Text(msg) } },
-      singleLine = true,
-      modifier = Modifier
-        .fillMaxWidth()
-        .testTag("category_name_input"),
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-          text = "Category Icon",
-          style = MaterialTheme.typography.labelLarge,
-        )
-        Text(
-          text = if (isAutoMatched) "Auto-matched" else "Custom",
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.primary,
-        )
-      }
-      LazyRow(
-        state = iconRowState,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        items(iconOptions, key = { it.iconKey }) { option ->
-          val isSelected = option.iconKey == selectedIconKey
-          val accent = com.example.ui.components.accessibleCategoryColor(Color(option.colorHex))
-          Surface(
-            onClick = { manualIconKey = option.iconKey },
-            shape = RoundedCornerShape(12.dp),
-            color = if (isSelected) accent.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-            border = BorderStroke(
-              width = if (isSelected) 1.5.dp else 1.dp,
-              color = if (isSelected) accent else MaterialTheme.colorScheme.outlineVariant,
-            ),
-            modifier = Modifier
-              .size(44.dp)
-              .testTag("category_icon_option_${option.iconKey}"),
-          ) {
-            Box(contentAlignment = Alignment.Center) {
-              Icon(
-                imageVector = option.icon,
-                contentDescription = option.label,
-                tint = if (isSelected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-              )
-            }
-          }
-        }
-      }
-    }
-  }
 }

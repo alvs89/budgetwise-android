@@ -53,9 +53,7 @@ class BudgetWiseRepository(
    */
   suspend fun ensureInitialDataSeeded() {
     seedMutex.withLock {
-      if (categoryDao.count() == 0) {
-        categoryDao.insertAll(SampleDataSeeder.defaultCategories())
-      }
+      categoryDao.insertAll(SampleDataSeeder.defaultCategories())
       val prefs = preferencesRepository.userPreferences.first()
       if (!prefs.hasSeededInitialData &&
         transactionDao.count() == 0 &&
@@ -75,9 +73,7 @@ class BudgetWiseRepository(
       savingsGoalDao.deleteAllContributions()
       savingsGoalDao.deleteAllGoals()
       financialAlertDao.deleteAll()
-      if (categoryDao.count() == 0) {
-        categoryDao.insertAll(SampleDataSeeder.defaultCategories())
-      }
+      categoryDao.insertAll(SampleDataSeeder.defaultCategories())
       seedDemoRecordsInternal()
       preferencesRepository.markInitialDataSeeded()
     }
@@ -160,6 +156,26 @@ class BudgetWiseRepository(
   // Categories
   suspend fun addCategory(category: CategoryEntity) {
     categoryDao.insert(category)
+  }
+
+  suspend fun updateCategory(
+    existing: CategoryEntity,
+    newName: String,
+    newIconKey: String,
+    newColorHex: Long,
+  ) {
+    val cleanName = if (existing.isDefault) existing.name else newName.trim().ifEmpty { existing.name }
+    categoryDao.update(
+      existing.copy(
+        name = cleanName,
+        iconKey = newIconKey,
+        colorHex = newColorHex,
+      )
+    )
+    if (cleanName != existing.name) {
+      transactionDao.renameCategory(oldName = existing.name, newName = cleanName)
+      budgetDao.renameCategory(oldName = existing.name, newName = cleanName)
+    }
   }
 
   suspend fun deleteCategory(category: CategoryEntity) {

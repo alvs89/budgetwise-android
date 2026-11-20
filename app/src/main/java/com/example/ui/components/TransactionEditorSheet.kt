@@ -3,7 +3,6 @@ package com.example.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,21 +21,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,17 +40,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -76,12 +67,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import kotlinx.coroutines.launch
 import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.domain.CurrencyOption
@@ -89,8 +76,8 @@ import com.example.domain.FinanceCalculator
 import com.example.domain.MILLIS_PER_DAY
 import com.example.domain.PaymentMethod
 import com.example.domain.TransactionType
-import com.example.domain.compactCategoryLabel
 import com.example.domain.currentEpochDay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,15 +104,14 @@ fun TransactionEditorSheet(
     mutableStateOf(existingTransaction?.type ?: TransactionType.EXPENSE)
   }
   val availableCategories = remember(categories, type) {
-    categories
+    val raw = categories
       .filter { it.type == type }
       .map { it.name }
-      .distinct()
-      .sortedWith(compareBy<String>({ isOtherCategoryName(it) }, { it.lowercase() }))
       .ifEmpty {
-        if (type == TransactionType.INCOME) listOf("Allowance", "Salary", "Other Income")
+        if (type == TransactionType.INCOME) listOf("Salary", "Allowance", "Other Income")
         else listOf("Food and Dining", "Transportation", "Other Expenses")
       }
+    sortCategoriesOtherLast(raw)
   }
   var title by remember(existingTransaction) { mutableStateOf(existingTransaction?.title ?: "") }
   var amountText by remember(existingTransaction) {
@@ -174,7 +160,7 @@ fun TransactionEditorSheet(
       .testTag("transaction_editor_sheet"),
   ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-      val maxSheetHeight = if (maxHeight != androidx.compose.ui.unit.Dp.Infinity) {
+      val maxSheetHeight = if (maxHeight != Dp.Infinity) {
         (maxHeight * 0.90f).coerceAtLeast(360.dp)
       } else {
         680.dp
@@ -230,9 +216,11 @@ fun TransactionEditorSheet(
                 selected = type == option,
                 onClick = {
                   type = option
-                  val firstCat = categories.firstOrNull { it.type == option }?.name
-                    ?: if (option == TransactionType.INCOME) "Allowance" else "Food and Dining"
-                  selectedCategory = firstCat
+                  val ordered = sortCategoriesOtherLast(
+                    categories.filter { it.type == option }.map { it.name }
+                  )
+                  selectedCategory = ordered.firstOrNull()
+                    ?: if (option == TransactionType.INCOME) "Salary" else "Food and Dining"
                 },
                 shape = SegmentedButtonDefaults.itemShape(
                   index = index,
@@ -290,63 +278,14 @@ fun TransactionEditorSheet(
               .testTag("tx_amount_input"),
           )
 
-          // Compact Category Selector Row (opens 3-column visual icon grid picker)
-          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-              text = "Category",
-              style = MaterialTheme.typography.labelLarge,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            val tint = categoryTint(selectedCategory, categories)
-            Surface(
-              shape = RoundedCornerShape(12.dp),
-              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
-              modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 52.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { showCategoryPicker = true }
-                .testTag("tx_category_selector"),
-            ) {
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-              ) {
-                Box(
-                  modifier = Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(tint.copy(alpha = 0.16f)),
-                  contentAlignment = Alignment.Center,
-                ) {
-                  Icon(
-                    imageVector = categoryIcon(selectedCategory, categories),
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(18.dp),
-                  )
-                }
-                Text(
-                  text = compactCategoryLabel(selectedCategory),
-                  style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                  color = MaterialTheme.colorScheme.onSurface,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                  modifier = Modifier.weight(1f),
-                )
-                Icon(
-                  imageVector = Icons.Rounded.KeyboardArrowDown,
-                  contentDescription = "Choose category",
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(22.dp),
-                )
-              }
-            }
-          }
+          // Compact Category Selector Row -> opens 4-column circular icon grid sheet
+          CategorySelectorField(
+            selectedCategory = selectedCategory,
+            allCategories = categories,
+            label = "Category",
+            onClick = { showCategoryPicker = true },
+            testTag = "tx_category_selector",
+          )
 
           Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
@@ -362,7 +301,7 @@ fun TransactionEditorSheet(
             )
           }
 
-          // Single-row horizontal scrollable Payment Method chips with clear scroll affordance
+          // Single-row horizontal scrollable Payment Method chips with unmistakable scroll cue
           val paymentRowState = rememberLazyListState()
           val paymentCoroutineScope = rememberCoroutineScope()
           val canScrollMorePayments by remember {
@@ -541,13 +480,14 @@ fun TransactionEditorSheet(
   }
 
   if (showCategoryPicker) {
-    CategoryGridPickerDialog(
-      type = type,
-      availableCategories = availableCategories,
+    CategoryPickerBottomSheet(
+      activeType = type,
       allCategories = categories,
       selectedCategory = selectedCategory,
-      onSelectCategory = { chosen ->
-        selectedCategory = chosen
+      allowTypeSwitch = true,
+      onSelect = { chosenCategory, chosenType ->
+        type = chosenType
+        selectedCategory = chosenCategory
         showCategoryPicker = false
       },
       onDismiss = { showCategoryPicker = false },
@@ -579,166 +519,4 @@ fun TransactionEditorSheet(
       DatePicker(state = datePickerState)
     }
   }
-}
-
-@Composable
-private fun CategoryGridPickerDialog(
-  type: TransactionType,
-  availableCategories: List<String>,
-  allCategories: List<CategoryEntity>,
-  selectedCategory: String,
-  onSelectCategory: (String) -> Unit,
-  onDismiss: () -> Unit,
-) {
-  Dialog(
-    onDismissRequest = onDismiss,
-    properties = DialogProperties(usePlatformDefaultWidth = false),
-  ) {
-    Surface(
-      shape = RoundedCornerShape(24.dp),
-      color = MaterialTheme.colorScheme.surface,
-      tonalElevation = 6.dp,
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 20.dp)
-        .widthIn(max = 420.dp)
-        .testTag("category_grid_picker_sheet"),
-    ) {
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 18.dp, vertical = 18.dp),
-      ) {
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 12.dp),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Text(
-            text = if (type == TransactionType.INCOME) "Select Income Category" else "Select Expense Category",
-            style = MaterialTheme.typography.titleLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-          )
-          IconButton(
-            onClick = onDismiss,
-            modifier = Modifier
-              .minimumInteractiveComponentSize()
-              .testTag("category_picker_close"),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.Close,
-              contentDescription = "Close category picker",
-              tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          }
-        }
-
-        val rows = remember(availableCategories) { availableCategories.chunked(3) }
-        Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 420.dp)
-            .verticalScroll(rememberScrollState()),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-          rows.forEach { rowCategories ->
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-              rowCategories.forEach { cat ->
-                val isSelected = cat == selectedCategory
-                val tint = categoryTint(cat, allCategories)
-                Surface(
-                  shape = RoundedCornerShape(14.dp),
-                  color = if (isSelected) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
-                  } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                  },
-                  border = BorderStroke(
-                    width = if (isSelected) 1.5.dp else 1.dp,
-                    color = if (isSelected) {
-                      MaterialTheme.colorScheme.primary
-                    } else {
-                      MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                    },
-                  ),
-                  modifier = Modifier
-                    .weight(1f)
-                    .height(96.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { onSelectCategory(cat) }
-                    .testTag("tx_category_option_${cat.lowercase().replace(Regex("[^a-z0-9]+"), "_")}"),
-                ) {
-                  Box(modifier = Modifier.fillMaxWidth()) {
-                    if (isSelected) {
-                      Icon(
-                        imageVector = Icons.Rounded.CheckCircle,
-                        contentDescription = "Selected",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                          .align(Alignment.TopEnd)
-                          .padding(6.dp)
-                          .size(16.dp),
-                      )
-                    }
-                    Column(
-                      modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.Center)
-                        .padding(horizontal = 6.dp, vertical = 10.dp),
-                      horizontalAlignment = Alignment.CenterHorizontally,
-                      verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                      Box(
-                        modifier = Modifier
-                          .size(38.dp)
-                          .clip(CircleShape)
-                          .background(tint.copy(alpha = if (isSelected) 0.22f else 0.15f)),
-                        contentAlignment = Alignment.Center,
-                      ) {
-                        Icon(
-                          imageVector = categoryIcon(cat, allCategories),
-                          contentDescription = null,
-                          tint = tint,
-                          modifier = Modifier.size(20.dp),
-                        )
-                      }
-                      Text(
-                        text = compactCategoryLabel(cat),
-                        style = MaterialTheme.typography.labelMedium.copy(
-                          fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                        ),
-                        color = if (isSelected) {
-                          MaterialTheme.colorScheme.onSurface
-                        } else {
-                          MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f)
-                        },
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                      )
-                    }
-                  }
-                }
-              }
-              repeat(3 - rowCategories.size) {
-                Spacer(modifier = Modifier.weight(1f))
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-private fun isOtherCategoryName(name: String): Boolean {
-  val normalized = name.trim().lowercase()
-  return normalized == "other" || normalized == "others" || normalized.startsWith("other ")
 }

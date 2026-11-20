@@ -580,6 +580,7 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                 onDisableAppLock = viewModel::disableAppLock,
                 onLockAppNow = viewModel::lockAppNow,
                 onAddCategory = viewModel::addCustomCategory,
+                onUpdateCategory = viewModel::updateCategory,
                 onDeleteCategory = viewModel::deleteCustomCategory,
                 onExportData = { showExportDialog = true },
                 onResetDemoData = viewModel::resetDemonstrationData,

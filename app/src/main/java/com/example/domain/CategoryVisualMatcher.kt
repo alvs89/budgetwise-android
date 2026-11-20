@@ -12,74 +12,97 @@ data class CategoryVisualRule(
 
 object CategoryVisualMatcher {
 
-  private val customPalette = listOf(
-    0xFF0F766E,
-    0xFF2563EB,
-    0xFF7C3AED,
-    0xFFD97706,
-    0xFFDB2777,
-    0xFF059669,
-    0xFF0284C7,
-    0xFFEA580C,
-    0xFF4F46E5,
-    0xFF0D9488,
+  val accentSwatches: List<Long> = listOf(
+    0xFF10B981, // Emerald
+    0xFF0EA5A4, // Teal
+    0xFF0284C7, // Sky Blue
+    0xFF3B82F6, // Royal Blue
+    0xFF6366F1, // Indigo
+    0xFF7C3AED, // Violet
+    0xFFDB2777, // Pink
+    0xFFF43F5E, // Coral Red
+    0xFFEA580C, // Tangerine
+    0xFFEAB308, // Amber Gold
   )
+
+  private val customPalette = accentSwatches
 
   val rules: List<CategoryVisualRule> = listOf(
     // Specific multi-domain / everyday categories checked with high specificity
     CategoryVisualRule(
       iconKey = "coffee",
-      label = "Coffee & Drinks",
-      colorHex = 0xFFC27803,
-      keywords = listOf("coffee", "cafe", "tea", "boba", "milk tea", "bakery", "drinks", "beverage", "starbucks"),
+      label = "Coffee & Snacks",
+      colorHex = 0xFFEA580C,
+      exactNames = listOf("coffee and snacks", "coffee & snacks"),
+      keywords = listOf("coffee", "cafe", "tea", "boba", "milk tea", "bakery", "drinks", "beverage", "starbucks", "snack", "snacks"),
     ),
     CategoryVisualRule(
       iconKey = "groceries",
       label = "Groceries",
-      colorHex = 0xFF15803D,
+      colorHex = 0xFF10B981,
+      exactNames = listOf("groceries"),
       keywords = listOf("grocery", "groceries", "supermarket", "palengke", "market", "produce", "pantry"),
     ),
     CategoryVisualRule(
       iconKey = "pets",
       label = "Pets",
-      colorHex = 0xFFB45309,
+      colorHex = 0xFFD97706,
+      exactNames = listOf("pets"),
       keywords = listOf("pet", "pets", "dog", "dogs", "cat", "cats", "vet", "veterinary", "pet food", "kibble"),
     ),
     CategoryVisualRule(
       iconKey = "fitness",
-      label = "Fitness & Gym",
+      label = "Fitness & Sports",
       colorHex = 0xFFEA580C,
+      exactNames = listOf("fitness and sports", "fitness & sports"),
       keywords = listOf("gym", "fitness", "workout", "sport", "sports", "yoga", "pilates", "running", "cycling"),
     ),
     CategoryVisualRule(
       iconKey = "flight",
       label = "Travel",
       colorHex = 0xFF0284C7,
+      exactNames = listOf("travel"),
       keywords = listOf("travel", "flight", "flights", "trip", "vacation", "hotel", "airline", "resort", "staycation", "tour"),
     ),
     CategoryVisualRule(
       iconKey = "car",
       label = "Car & Fuel",
       colorHex = 0xFF0369A1,
+      exactNames = listOf("car and fuel", "car & fuel"),
       keywords = listOf("car", "auto", "vehicle", "gas", "gasoline", "fuel", "diesel", "parking", "toll", "rfid", "motorcycle", "moto"),
     ),
     CategoryVisualRule(
       iconKey = "subscriptions",
       label = "Subscriptions",
       colorHex = 0xFF7C3AED,
-      keywords = listOf("subscription", "subscriptions", "streaming", "netflix", "spotify", "disney", "youtube", "membership", "music", "icloud"),
+      exactNames = listOf("subscriptions"),
+      keywords = listOf("subscription", "subscriptions", "streaming", "netflix", "spotify", "disney", "youtube", "membership", "icloud"),
+    ),
+    CategoryVisualRule(
+      iconKey = "devices",
+      label = "Electronics",
+      colorHex = 0xFF0284C7,
+      exactNames = listOf("electronics"),
+      keywords = listOf("electronics", "electronic", "gadget", "gadgets", "computer", "tablet", "pc", "hardware", "charger", "headphones"),
     ),
     CategoryVisualRule(
       iconKey = "gaming",
       label = "Gaming",
-      colorHex = 0xFF4F46E5,
+      colorHex = 0xFF6366F1,
       keywords = listOf("game", "games", "gaming", "esports", "steam", "playstation", "nintendo", "xbox", "arcade"),
     ),
     CategoryVisualRule(
       iconKey = "wifi",
-      label = "Internet & Mobile",
-      colorHex = 0xFF2563EB,
-      keywords = listOf("internet", "wifi", "broadband", "fiber", "mobile", "telecom", "load", "data", "phone"),
+      label = "Internet & Load",
+      colorHex = 0xFF3B82F6,
+      exactNames = listOf("internet and load", "internet & load"),
+      keywords = listOf("internet", "wifi", "broadband", "fiber", "mobile", "telecom", "load", "data", "phone", "prepaid"),
+    ),
+    CategoryVisualRule(
+      iconKey = "smartphone",
+      label = "Mobile & Phone",
+      colorHex = 0xFF0EA5A4,
+      keywords = listOf("smartphone", "cellphone", "sim", "airtime"),
     ),
     CategoryVisualRule(
       iconKey = "bolt",
@@ -97,43 +120,61 @@ object CategoryVisualMatcher {
       iconKey = "family",
       label = "Family & Kids",
       colorHex = 0xFFE11D48,
+      exactNames = listOf("family and kids", "family & kids"),
       keywords = listOf("baby", "child", "children", "kids", "kid", "family", "daycare", "diaper", "parenting"),
     ),
     CategoryVisualRule(
-      iconKey = "gift",
+      iconKey = "charity",
       label = "Gifts & Charity",
+      colorHex = 0xFFF43F5E,
+      exactNames = listOf("gifts and charity", "gifts & charity"),
+      keywords = listOf("charity", "donation", "donations", "tithe", "volunteer", "offering", "help"),
+    ),
+    CategoryVisualRule(
+      iconKey = "gift",
+      label = "Gifts & Refunds",
       colorHex = 0xFFDB2777,
-      keywords = listOf("gift", "gifts", "present", "birthday", "wedding", "holiday", "christmas", "charity", "donation", "tithe", "prize", "reward"),
+      exactNames = listOf("gifts and refunds", "gifts & refunds"),
+      keywords = listOf("gift", "gifts", "present", "birthday", "wedding", "holiday", "christmas", "refund", "refunds", "reimbursement"),
+    ),
+    CategoryVisualRule(
+      iconKey = "bonus",
+      label = "Bonus & Rewards",
+      colorHex = 0xFFEAB308,
+      exactNames = listOf("bonus"),
+      keywords = listOf("bonus", "bonuses", "prize", "reward", "rewards", "incentive", "thirteenth", "commission"),
     ),
     CategoryVisualRule(
       iconKey = "trending_up",
       label = "Investments",
-      colorHex = 0xFF16A34A,
-      keywords = listOf("invest", "investment", "investments", "stock", "stocks", "dividend", "dividends", "crypto", "trading", "interest", "profit", "bonus", "commission"),
+      colorHex = 0xFF10B981,
+      exactNames = listOf("investments"),
+      keywords = listOf("invest", "investment", "investments", "stock", "stocks", "dividend", "dividends", "crypto", "trading", "interest", "profit"),
     ),
     CategoryVisualRule(
       iconKey = "savings",
       label = "Savings",
       colorHex = 0xFF059669,
-      keywords = listOf("savings", "saving", "emergency", "fund", "deposit", "pension", "retirement", "refund", "reimbursement"),
+      keywords = listOf("savings", "saving", "emergency", "fund", "deposit", "pension", "retirement"),
     ),
     CategoryVisualRule(
       iconKey = "repair",
       label = "Repairs",
       colorHex = 0xFF64748B,
-      keywords = listOf("repair", "repairs", "maintenance", "hardware", "tools", "mechanic", "plumber"),
+      exactNames = listOf("repairs"),
+      keywords = listOf("repair", "repairs", "maintenance", "tools", "mechanic", "plumber", "fix"),
     ),
     CategoryVisualRule(
       iconKey = "bank",
       label = "Banking & Loans",
-      colorHex = 0xFF4F46E5,
+      colorHex = 0xFF6366F1,
       keywords = listOf("bank", "loan", "loans", "debt", "credit", "tax", "taxes", "government", "sss", "pagibig", "philhealth"),
     ),
     // Built-in Income & Expense categories
     CategoryVisualRule(
       iconKey = "wallet",
       label = "Allowance",
-      colorHex = 0xFF15803D,
+      colorHex = 0xFF0EA5A4,
       exactNames = listOf("allowance"),
       keywords = listOf("allowance", "baon", "stipend", "pocket money", "cashback", "rebate"),
     ),
@@ -147,42 +188,42 @@ object CategoryVisualMatcher {
     CategoryVisualRule(
       iconKey = "laptop",
       label = "Freelance",
-      colorHex = 0xFF0D9488,
+      colorHex = 0xFF0EA5A4,
       exactNames = listOf("freelance"),
       keywords = listOf("freelance", "consulting", "gig", "side hustle", "remote", "software", "tech"),
     ),
     CategoryVisualRule(
       iconKey = "store",
       label = "Business",
-      colorHex = 0xFF2563EB,
+      colorHex = 0xFF3B82F6,
       exactNames = listOf("business"),
       keywords = listOf("business", "sales", "shop", "store", "ecommerce", "retail", "merch"),
     ),
     CategoryVisualRule(
       iconKey = "restaurant",
       label = "Food & Dining",
-      colorHex = 0xFF0F766E,
+      colorHex = 0xFF0EA5A4,
       exactNames = listOf("food and dining", "food & dining"),
-      keywords = listOf("food", "dining", "lunch", "dinner", "breakfast", "snack", "snacks", "meal", "meals", "restaurant", "takeout", "delivery", "fast food"),
+      keywords = listOf("food", "dining", "lunch", "dinner", "breakfast", "meal", "meals", "restaurant", "takeout", "delivery", "fast food"),
     ),
     CategoryVisualRule(
       iconKey = "directions_bus",
       label = "Transportation",
-      colorHex = 0xFF1D4ED8,
+      colorHex = 0xFF3B82F6,
       exactNames = listOf("transportation"),
       keywords = listOf("transport", "transportation", "commute", "bus", "train", "jeep", "jeepney", "mrt", "lrt", "fare", "transit", "taxi", "grab", "uber"),
     ),
     CategoryVisualRule(
       iconKey = "school",
       label = "Education",
-      colorHex = 0xFF6D28D9,
+      colorHex = 0xFF7C3AED,
       exactNames = listOf("education"),
-      keywords = listOf("education", "school", "tuition", "college", "university", "study", "class", "course", "training", "book", "books", "supplies"),
+      keywords = listOf("education", "school", "tuition", "college", "university", "study", "class", "course", "training", "supplies"),
     ),
     CategoryVisualRule(
       iconKey = "receipt",
       label = "Bills & Utilities",
-      colorHex = 0xFFD97706,
+      colorHex = 0xFFEAB308,
       exactNames = listOf("bills and utilities", "bills & utilities"),
       keywords = listOf("bill", "bills", "utility", "utilities", "invoice", "fee", "fees", "dues", "installment", "postpaid"),
     ),
@@ -191,35 +232,53 @@ object CategoryVisualMatcher {
       label = "Shopping",
       colorHex = 0xFFDB2777,
       exactNames = listOf("shopping"),
-      keywords = listOf("shopping", "mall", "lazada", "shopee", "amazon", "haul", "accessories", "gadget", "gadgets", "electronics"),
+      keywords = listOf("shopping", "mall", "lazada", "shopee", "amazon", "haul", "accessories"),
     ),
     CategoryVisualRule(
       iconKey = "movie",
       label = "Entertainment",
-      colorHex = 0xFF0284C7,
+      colorHex = 0xFF6366F1,
       exactNames = listOf("entertainment"),
       keywords = listOf("entertainment", "movie", "movies", "cinema", "concert", "theater", "hobby", "hobbies", "leisure", "party"),
     ),
     CategoryVisualRule(
       iconKey = "medical",
       label = "Healthcare",
-      colorHex = 0xFFDC2626,
+      colorHex = 0xFFF43F5E,
       exactNames = listOf("healthcare"),
       keywords = listOf("health", "healthcare", "medical", "medicine", "pharmacy", "doctor", "clinic", "hospital", "dental", "dentist", "therapy", "vitamins", "checkup", "insurance"),
     ),
     CategoryVisualRule(
       iconKey = "home",
-      label = "Housing",
+      label = "Housing & Rent",
       colorHex = 0xFF3B82F6,
-      exactNames = listOf("housing"),
+      exactNames = listOf("housing", "housing and rent", "housing & rent"),
       keywords = listOf("home", "house", "housing", "rent", "mortgage", "condo", "apartment", "furniture", "decor", "cleaning"),
     ),
     CategoryVisualRule(
       iconKey = "spa",
       label = "Personal Care",
-      colorHex = 0xFF059669,
+      colorHex = 0xFF10B981,
       exactNames = listOf("personal care"),
       keywords = listOf("personal care", "personal", "care", "salon", "hair", "haircut", "barber", "skincare", "makeup", "cosmetics", "massage", "wellness", "grooming"),
+    ),
+    CategoryVisualRule(
+      iconKey = "music",
+      label = "Music & Audio",
+      colorHex = 0xFF7C3AED,
+      keywords = listOf("music", "audio", "podcast", "instrument", "karaoke"),
+    ),
+    CategoryVisualRule(
+      iconKey = "book",
+      label = "Books & Reading",
+      colorHex = 0xFF0284C7,
+      keywords = listOf("book", "books", "reading", "kindle", "magazine", "stationery"),
+    ),
+    CategoryVisualRule(
+      iconKey = "drinks",
+      label = "Social & Drinks",
+      colorHex = 0xFFDB2777,
+      keywords = listOf("bar", "wine", "nightlife", "hangout", "social"),
     ),
     CategoryVisualRule(
       iconKey = "payments",
@@ -231,7 +290,7 @@ object CategoryVisualMatcher {
     CategoryVisualRule(
       iconKey = "label",
       label = "Custom Label",
-      colorHex = 0xFF0F766E,
+      colorHex = 0xFF0EA5A4,
     ),
     CategoryVisualRule(
       iconKey = "category",

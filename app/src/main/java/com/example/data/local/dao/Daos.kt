@@ -39,6 +39,9 @@ interface TransactionDao {
   @Query("DELETE FROM transactions WHERE id = :id")
   suspend fun deleteById(id: Long)
 
+  @Query("UPDATE transactions SET category = :newName WHERE category = :oldName")
+  suspend fun renameCategory(oldName: String, newName: String)
+
   @Query("DELETE FROM transactions")
   suspend fun deleteAll()
 }
@@ -68,6 +71,9 @@ interface BudgetDao {
 
   @Query("DELETE FROM budgets WHERE id = :id")
   suspend fun deleteById(id: Long)
+
+  @Query("UPDATE budgets SET category = :newName WHERE category = :oldName")
+  suspend fun renameCategory(oldName: String, newName: String)
 
   @Query("DELETE FROM budgets")
   suspend fun deleteAll()
@@ -200,6 +206,9 @@ interface CategoryDao {
 
   @Insert(onConflict = OnConflictStrategy.IGNORE)
   suspend fun insertAll(categories: List<CategoryEntity>)
+
+  @Update
+  suspend fun update(category: CategoryEntity)
 
   @Delete
   suspend fun delete(category: CategoryEntity)

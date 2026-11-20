@@ -199,6 +199,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private val activeChatSelectionFlow = MutableStateFlow<ActiveChatSelection>(ActiveChatSelection.AutoLatest)
   private val chatStreamingStateFlow = MutableStateFlow<ChatStreamingState>(ChatStreamingState.Idle)
   private var activeChatJob: Job? = null
+  private var clearChatJob: Job? = null
 
   private var backgroundedAtMillis: Long? = null
 
@@ -661,6 +662,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     name: String,
     type: TransactionType,
     iconKey: String? = null,
+    colorHex: Long? = null,
   ) {
     viewModelScope.launch {
       val cleanName = name.trim()
@@ -674,7 +676,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       }
       val (inferredIconKey, inferredColorHex) = CategoryVisualMatcher.inferIconAndColor(cleanName, type)
       val finalIconKey = iconKey?.takeIf { it.isNotBlank() } ?: inferredIconKey
-      val finalColorHex = CategoryVisualMatcher.colorForIconOrName(
+      val finalColorHex = colorHex ?: CategoryVisualMatcher.colorForIconOrName(
         iconKey = finalIconKey,
         name = cleanName,
         type = type,
@@ -690,6 +692,34 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         )
       )
       _snackbarMessages.tryEmit("Category \"$cleanName\" added")
+    }
+  }
+
+  fun updateCategory(
+    category: CategoryEntity,
+    newName: String,
+    newIconKey: String,
+    newColorHex: Long,
+  ) {
+    viewModelScope.launch {
+      val targetName = if (category.isDefault) category.name else newName.trim()
+      if (targetName.isEmpty()) return@launch
+      if (!category.isDefault && !targetName.equals(category.name, ignoreCase = true)) {
+        val duplicate = uiState.value.categories.any {
+          it.id != category.id && it.name.trim().equals(targetName, ignoreCase = true)
+        }
+        if (duplicate) {
+          _snackbarMessages.tryEmit("Category \"$targetName\" already exists")
+          return@launch
+        }
+      }
+      repository.updateCategory(
+        existing = category,
+        newName = targetName,
+        newIconKey = newIconKey,
+        newColorHex = newColorHex,
+      )
+      _snackbarMessages.tryEmit("Category updated")
     }
   }
 
@@ -1014,6 +1044,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
 
     activeChatJob?.cancel()
     activeChatJob = viewModelScope.launch {
+      clearChatJob?.join()
       val currentActive = resolveActiveSession()
       val sessionId = if (currentActive == null) {
         val autoTitle = ChatTitleGenerator.generateTitle(listOf(cleanPrompt))
@@ -1207,7 +1238,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     activeChatJob = null
     chatStreamingStateFlow.value = ChatStreamingState.Idle
     activeChatSelectionFlow.value = ActiveChatSelection.NewDraft
-    viewModelScope.launch {
+    clearChatJob = viewModelScope.launch {
       repository.clearChatHistory()
       _snackbarMessages.tryEmit("Chat history cleared")
     }

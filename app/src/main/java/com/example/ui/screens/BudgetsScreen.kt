@@ -55,7 +55,8 @@ import com.example.domain.TransactionType
 import com.example.domain.YearMonthKey
 import com.example.ui.components.AutoResizeSingleLineText
 import com.example.ui.components.BudgetProgressCard
-import com.example.ui.components.CategoryDropdown
+import com.example.ui.components.CategoryPickerBottomSheet
+import com.example.ui.components.CategorySelectorField
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.EmptyStatePanel
 import com.example.ui.components.FintechProgressBar
@@ -64,6 +65,7 @@ import com.example.ui.components.MonthSelectorBar
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StableFormDialog
 import com.example.ui.components.SwipeToRevealDeleteRow
+import com.example.ui.components.sortCategoriesOtherLast
 import com.example.ui.theme.LocalFinanceColors
 import com.example.ui.viewmodel.BudgetWiseUiState
 import java.math.BigDecimal
@@ -357,13 +359,17 @@ private fun BudgetEditorDialog(
   onDismiss: () -> Unit,
 ) {
   val expenseCategories = remember(categories, existing) {
-    val base = categories.filter { it.type == TransactionType.EXPENSE }.map { it.name }
+    val base = categories
+      .filter { it.type == TransactionType.EXPENSE }
+      .map { it.name }
       .ifEmpty { listOf("Food and Dining", "Transportation", "Education", "Bills and Utilities", "Shopping") }
-    if (existing != null && existing.category !in base) listOf(existing.category) + base else base
+    val withExisting = if (existing != null && existing.category !in base) listOf(existing.category) + base else base
+    sortCategoriesOtherLast(withExisting)
   }
   var selectedCategory by remember(existing) {
     mutableStateOf(existing?.category ?: expenseCategories.first())
   }
+  var showCategoryPicker by remember { mutableStateOf(false) }
   var limitText by remember(existing) {
     mutableStateOf(existing?.limitAmount?.toPlainString() ?: "")
   }
@@ -426,13 +432,12 @@ private fun BudgetEditorDialog(
       style = MaterialTheme.typography.labelLarge,
       color = MaterialTheme.colorScheme.primary,
     )
-    CategoryDropdown(
+    CategorySelectorField(
       selectedCategory = selectedCategory,
-      categoryNames = expenseCategories,
       allCategories = categories,
-      onSelectCategory = { selectedCategory = it },
+      onClick = { showCategoryPicker = true },
       label = "Budget Category",
-      fieldTestTag = "budget_category_dropdown",
+      testTag = "budget_category_dropdown",
     )
     OutlinedTextField(
       value = limitText,
@@ -449,6 +454,20 @@ private fun BudgetEditorDialog(
       modifier = Modifier
         .fillMaxWidth()
         .testTag("budget_limit_input"),
+    )
+  }
+
+  if (showCategoryPicker) {
+    CategoryPickerBottomSheet(
+      activeType = TransactionType.EXPENSE,
+      allCategories = categories,
+      selectedCategory = selectedCategory,
+      allowTypeSwitch = false,
+      onSelect = { chosenCategory, _ ->
+        selectedCategory = chosenCategory
+        showCategoryPicker = false
+      },
+      onDismiss = { showCategoryPicker = false },
     )
   }
 }
