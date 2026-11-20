@@ -41,6 +41,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,9 +53,12 @@ import com.example.domain.DailySpendingPoint
 import com.example.domain.FinanceCalculator
 import com.example.domain.MonthlyCashFlowPoint
 import com.example.domain.MonthlySpendingPoint
+import com.example.domain.YearMonthKey
 import com.example.domain.compactCategoryLabel
 import com.example.ui.theme.LocalFinanceColors
 import java.math.BigDecimal
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @Composable
 fun TopExpenseCategoriesOverview(
@@ -360,6 +365,85 @@ private fun LegendChip(color: Color, label: String) {
   }
 }
 
+private val DistinctDonutPaletteHex = listOf(
+  0xFF10B981L, // Emerald
+  0xFF06B6D4L, // Cyan
+  0xFF8B5CF6L, // Violet
+  0xFFF59E0BL, // Amber
+  0xFF3B82F6L, // Sky Blue
+  0xFFEC4899L, // Rose Pink
+  0xFFF97316L, // Coral Orange
+  0xFFF43F5EL, // Crimson Red
+  0xFF84CC16L, // Lime
+  0xFF6366F1L, // Indigo
+)
+
+private fun hexHueDegrees(colorHex: Long): Float {
+  val r = ((colorHex shr 16) and 0xFFL).toFloat() / 255f
+  val g = ((colorHex shr 8) and 0xFFL).toFloat() / 255f
+  val b = (colorHex and 0xFFL).toFloat() / 255f
+  val max = maxOf(r, g, b)
+  val min = minOf(r, g, b)
+  val delta = max - min
+  if (delta < 0.0001f) return -1f // Achromatic / neutral gray
+  val raw = when (max) {
+    r -> ((g - b) / delta) % 6f
+    g -> ((b - r) / delta) + 2f
+    else -> ((r - g) / delta) + 4f
+  } * 60f
+  return if (raw < 0f) raw + 360f else raw
+}
+
+private fun circularHueDistance(h1: Float, h2: Float): Float {
+  if (h1 < 0f && h2 < 0f) return 0f
+  if (h1 < 0f || h2 < 0f) return 90f
+  val diff = abs(h1 - h2)
+  return minOf(diff, 360f - diff)
+}
+
+/**
+ * Preserves each category's assigned/custom color unless two visible slices in the donut share
+ * an identical or overly similar hue (including wrap-around adjacency between the last and first
+ * slice at 12 o'clock), substituting the farthest available hue from [DistinctDonutPaletteHex].
+ */
+internal fun resolveDistinctDonutColorHexes(
+  breakdown: List<CategoryBreakdown>,
+): List<Long> {
+  if (breakdown.isEmpty()) return emptyList()
+  val minHueSeparation = 24f
+  val assigned = ArrayList<Long>(breakdown.size)
+
+  breakdown.forEachIndexed { idx, slice ->
+    val preferred = slice.colorHex
+    val preferredHue = hexHueDegrees(preferred)
+    val isLastWrapping = idx == breakdown.lastIndex && breakdown.size > 1
+    val wrapFirstHue = if (isLastWrapping) hexHueDegrees(assigned.first()) else null
+
+    val clashesWithExisting = assigned.any { existing ->
+      circularHueDistance(preferredHue, hexHueDegrees(existing)) < minHueSeparation
+    }
+    val clashesWithWrapNeighbor = wrapFirstHue != null &&
+      circularHueDistance(preferredHue, wrapFirstHue) < minHueSeparation
+
+    if (!clashesWithExisting && !clashesWithWrapNeighbor) {
+      assigned.add(preferred)
+    } else {
+      val prevHue = assigned.lastOrNull()?.let { hexHueDegrees(it) }
+      val bestCandidate = DistinctDonutPaletteHex.maxByOrNull { candidate ->
+        val candHue = hexHueDegrees(candidate)
+        val minAllDist = assigned.minOfOrNull { existing ->
+          circularHueDistance(candHue, hexHueDegrees(existing))
+        } ?: 180f
+        val prevBonus = prevHue?.let { minOf(circularHueDistance(candHue, it), 90f) * 0.25f } ?: 0f
+        val wrapBonus = wrapFirstHue?.let { minOf(circularHueDistance(candHue, it), 90f) * 0.25f } ?: 0f
+        minAllDist + prevBonus + wrapBonus
+      } ?: preferred
+      assigned.add(bestCandidate)
+    }
+  }
+  return assigned
+}
+
 @Composable
 fun CategoryDonutChart(
   breakdown: List<CategoryBreakdown>,
@@ -377,11 +461,15 @@ fun CategoryDonutChart(
   }
 
   var selectedIdx by remember(breakdown) { mutableIntStateOf(0) }
-  val total = breakdown.fold(BigDecimal.ZERO) { acc, item -> acc.add(item.amount) }
   val highlighted = breakdown.getOrNull(selectedIdx) ?: breakdown.first()
+  val isDarkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+  val sliceColors = remember(breakdown, isDarkSurface) {
+    resolveDistinctDonutColorHexes(breakdown).map { hex ->
+      adaptColorForSurface(Color(hex), isDarkSurface)
+    }
+  }
 
   Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-    val isDarkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     Box(
       modifier = Modifier
         .fillMaxWidth()
@@ -395,10 +483,9 @@ fun CategoryDonutChart(
           val sweep = (slice.percentage.toFloat() / 100f) * 360f
           val isSelected = idx == selectedIdx
           drawArc(
-            color = adaptColorForSurface(
-              rawColor = Color(slice.colorHex),
-              isDarkSurface = isDarkSurface,
-            ),
+            color = sliceColors.getOrElse(idx) {
+              adaptColorForSurface(Color(slice.colorHex), isDarkSurface)
+            },
             startAngle = startAngle,
             sweepAngle = (sweep - 2f).coerceAtLeast(2f),
             useCenter = false,
@@ -445,6 +532,9 @@ fun CategoryDonutChart(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
       breakdown.forEachIndexed { idx, item ->
         val isSelected = idx == selectedIdx
+        val resolvedColor = sliceColors.getOrElse(idx) {
+          accessibleCategoryColor(Color(item.colorHex))
+        }
         Surface(
           shape = RoundedCornerShape(10.dp),
           color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
@@ -467,7 +557,7 @@ fun CategoryDonutChart(
                 modifier = Modifier
                   .size(10.dp)
                   .clip(CircleShape)
-                  .background(accessibleCategoryColor(Color(item.colorHex))),
+                  .background(resolvedColor),
               )
               Text(
                 text = compactCategoryLabel(item.category),
@@ -509,6 +599,7 @@ fun CategoryDonutChart(
 fun SpendingTrendLineChart(
   points: List<DailySpendingPoint>,
   currencyCode: String,
+  selectedMonth: YearMonthKey = YearMonthKey.current(),
   modifier: Modifier = Modifier,
 ) {
   if (points.isEmpty()) {
@@ -521,43 +612,242 @@ fun SpendingTrendLineChart(
     return
   }
 
-  val peakPoint = points.maxByOrNull { it.amount }
-  val axisLabels = remember(points) {
-    val labels = points.take(7).map { "D${it.dayOfMonth}" }.toMutableList()
-    if (points.size > 7) {
-      labels.add("D${points.last().dayOfMonth}")
-    }
-    labels
+  val totalDays = remember(selectedMonth) { selectedMonth.daysInMonth() }
+  val monthShort = remember(selectedMonth) { selectedMonth.shortLabel() }
+  val peakIdx = remember(points) {
+    points.indices.maxByOrNull { points[it].amount } ?: 0
+  }
+  var selectedIdx by remember(points) { mutableIntStateOf(peakIdx) }
+  val activePoint = points.getOrElse(selectedIdx) { points.first() }
+  val isPeakSelected = selectedIdx == peakIdx
+  val tickDays = remember(totalDays) {
+    listOf(1, 8, 15, 22, totalDays).distinct()
   }
 
+  val isHidden = LocalIsBalanceHidden.current
+  val activeFormatted = FinanceCalculator.formatCompactCurrencyOrMasked(
+    amount = activePoint.amount,
+    currencyCode = currencyCode,
+    isHidden = isHidden,
+    omitZeroDecimalsForStandard = true,
+  )
+
   Column(modifier = modifier.fillMaxWidth()) {
-    if (peakPoint != null) {
-      val peakFormatted = FinanceCalculator.formatCompactCurrencyOrMasked(
-        amount = peakPoint.amount,
-        currencyCode = currencyCode,
-        isHidden = LocalIsBalanceHidden.current,
-        omitZeroDecimalsForStandard = true,
-      )
-      Text(
-        text = "Peak spending day: Day ${peakPoint.dayOfMonth} ($peakFormatted)",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-      Spacer(modifier = Modifier.height(10.dp))
+    Surface(
+      shape = RoundedCornerShape(10.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+      modifier = Modifier
+        .fillMaxWidth()
+        .testTag("daily_spending_readout"),
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = if (isPeakSelected) {
+            "Peak · $monthShort ${activePoint.dayOfMonth}"
+          } else {
+            "$monthShort ${activePoint.dayOfMonth}"
+          },
+          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          softWrap = false,
+        )
+        Text(
+          text = activeFormatted,
+          style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+          color = MaterialTheme.colorScheme.primary,
+          maxLines = 1,
+          softWrap = false,
+        )
+      }
     }
 
-    SpendingCurveCanvas(values = points.map { it.amount.toFloat() })
+    Spacer(modifier = Modifier.height(10.dp))
+
+    DailyCalendarCurveCanvas(
+      points = points,
+      totalDays = totalDays,
+      tickDays = tickDays,
+      selectedIndex = selectedIdx,
+      onSelectIndex = { selectedIdx = it },
+    )
 
     Spacer(modifier = Modifier.height(6.dp))
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-      axisLabels.forEach { label ->
+
+    // Proportionally aligned calendar X-axis labels directly matching canvas day coordinates
+    CalendarAxisTickRow(
+      tickDays = tickDays,
+      totalDays = totalDays,
+      monthShort = monthShort,
+    )
+  }
+}
+
+@Composable
+private fun DailyCalendarCurveCanvas(
+  points: List<DailySpendingPoint>,
+  totalDays: Int,
+  tickDays: List<Int>,
+  selectedIndex: Int,
+  onSelectIndex: (Int) -> Unit,
+) {
+  val lineColor = MaterialTheme.colorScheme.primary
+  val gridColor = MaterialTheme.colorScheme.outlineVariant
+  val surfaceColor = MaterialTheme.colorScheme.surface
+  val maxVal = points.maxOfOrNull { it.amount.toFloat() }?.coerceAtLeast(1f) ?: 1f
+  val spanDays = (totalDays - 1).coerceAtLeast(1).toFloat()
+
+  Canvas(
+    modifier = Modifier
+      .fillMaxWidth()
+      .height(150.dp)
+      .pointerInput(points, totalDays) {
+        detectTapGestures { tapOffset ->
+          val padX = 12.dp.toPx()
+          val usableW = (size.width - padX * 2).coerceAtLeast(1f)
+          val nearestIdx = points.indices.minByOrNull { idx ->
+            val fraction = ((points[idx].dayOfMonth - 1).coerceIn(0, totalDays - 1)) / spanDays
+            val pointX = padX + fraction * usableW
+            abs(tapOffset.x - pointX)
+          }
+          if (nearestIdx != null) {
+            onSelectIndex(nearestIdx)
+          }
+        }
+      },
+  ) {
+    val padX = 12.dp.toPx()
+    val padY = 14.dp.toPx()
+    val usableW = (size.width - padX * 2).coerceAtLeast(1f)
+    val usableH = (size.height - padY * 2).coerceAtLeast(1f)
+    val baselineY = padY + usableH
+
+    // 3 horizontal reference gridlines
+    for (i in 0..2) {
+      val y = padY + usableH * (i / 2f)
+      drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+    }
+
+    // Subtle baseline tick marks aligned with the calendar labels below
+    tickDays.forEach { day ->
+      val frac = ((day - 1).coerceIn(0, totalDays - 1)) / spanDays
+      val tickX = padX + frac * usableW
+      drawLine(
+        color = gridColor,
+        start = Offset(tickX, baselineY),
+        end = Offset(tickX, baselineY + 4.dp.toPx()),
+        strokeWidth = 1.dp.toPx(),
+      )
+    }
+
+    val coordinates = points.map { point ->
+      val frac = ((point.dayOfMonth - 1).coerceIn(0, totalDays - 1)) / spanDays
+      val x = padX + frac * usableW
+      val normalized = (point.amount.toFloat() / maxVal).coerceIn(0f, 1f)
+      val y = (padY + usableH * (1f - normalized)).coerceIn(padY, baselineY)
+      Offset(x, y)
+    }
+
+    if (coordinates.size >= 2) {
+      val linePath = Path().apply {
+        moveTo(coordinates.first().x, coordinates.first().y)
+        for (i in 1 until coordinates.size) {
+          val prev = coordinates[i - 1]
+          val curr = coordinates[i]
+          val midX = (prev.x + curr.x) / 2f
+          // Horizontal-tangent cubic Bezier stays strictly bounded within [min(prev.y, curr.y), max(prev.y, curr.y)]
+          cubicTo(midX, prev.y, midX, curr.y, curr.x, curr.y)
+        }
+      }
+      val fillPath = Path().apply {
+        addPath(linePath)
+        lineTo(coordinates.last().x, baselineY)
+        lineTo(coordinates.first().x, baselineY)
+        close()
+      }
+      drawPath(
+        path = fillPath,
+        brush = Brush.verticalGradient(
+          colors = listOf(lineColor.copy(alpha = 0.28f), lineColor.copy(alpha = 0.02f)),
+          startY = padY,
+          endY = baselineY,
+        ),
+      )
+      drawPath(
+        path = linePath,
+        color = lineColor,
+        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+      )
+    }
+
+    // Active vertical guide line for inspected day
+    coordinates.getOrNull(selectedIndex)?.let { active ->
+      drawLine(
+        color = lineColor.copy(alpha = 0.35f),
+        start = Offset(active.x, padY),
+        end = Offset(active.x, baselineY),
+        strokeWidth = 1.25.dp.toPx(),
+      )
+    }
+
+    coordinates.forEachIndexed { idx, pt ->
+      val isSelected = idx == selectedIndex
+      if (isSelected) {
+        drawCircle(color = lineColor.copy(alpha = 0.24f), radius = 10.dp.toPx(), center = pt)
+        drawCircle(color = surfaceColor, radius = 6.dp.toPx(), center = pt)
+        drawCircle(color = lineColor, radius = 4.5.dp.toPx(), center = pt)
+      } else {
+        drawCircle(color = Color.White, radius = 4.5.dp.toPx(), center = pt)
+        drawCircle(color = lineColor, radius = 3.dp.toPx(), center = pt)
+      }
+    }
+  }
+}
+
+@Composable
+private fun CalendarAxisTickRow(
+  tickDays: List<Int>,
+  totalDays: Int,
+  monthShort: String,
+) {
+  val spanDays = (totalDays - 1).coerceAtLeast(1).toFloat()
+  Layout(
+    content = {
+      tickDays.forEach { day ->
         Text(
-          text = label,
+          text = "$monthShort $day",
           style = MaterialTheme.typography.labelSmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 1,
           softWrap = false,
         )
+      }
+    },
+    modifier = Modifier.fillMaxWidth(),
+  ) { measurables, constraints ->
+    val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0)) }
+    val height = placeables.maxOfOrNull { it.height } ?: 0
+    val width = constraints.maxWidth
+    val padPx = 12.dp.roundToPx()
+    val usableW = (width - padPx * 2).coerceAtLeast(1)
+
+    layout(width, height) {
+      placeables.forEachIndexed { idx, placeable ->
+        val day = tickDays[idx]
+        val frac = ((day - 1).coerceIn(0, totalDays - 1)) / spanDays
+        val anchorX = padPx + (frac * usableW).roundToInt()
+        val x = when (idx) {
+          0 -> 0
+          placeables.lastIndex -> (width - placeable.width).coerceAtLeast(0)
+          else -> (anchorX - placeable.width / 2).coerceIn(0, (width - placeable.width).coerceAtLeast(0))
+        }
+        placeable.placeRelative(x = x, y = 0)
       }
     }
   }

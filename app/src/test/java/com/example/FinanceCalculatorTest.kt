@@ -4,14 +4,18 @@ import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.domain.BudgetHealthStatus
+import com.example.domain.CategoryBreakdown
 import com.example.domain.CategoryVisualMatcher
 import com.example.domain.FinanceCalculator
+import com.example.domain.InsightSeverity
 import com.example.domain.PaymentMethod
 import com.example.domain.TransactionType
 import com.example.domain.YearMonthKey
 import com.example.domain.compactCategoryLabel
 import com.example.domain.epochDayFromDate
+import com.example.ui.components.resolveDistinctDonutColorHexes
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -340,5 +344,96 @@ class FinanceCalculatorTest {
       "£1,250.50",
       FinanceCalculator.formatCurrency(BigDecimal("1250.50"), "GBP"),
     )
+  }
+
+  @Test
+  fun `yearMonthKey daysInMonth handles standard and leap years accurately`() {
+    assertEquals(30, YearMonthKey(2026, 11).daysInMonth())
+    assertEquals(31, YearMonthKey(2026, 12).daysInMonth())
+    assertEquals(28, YearMonthKey(2026, 2).daysInMonth())
+    assertEquals(29, YearMonthKey(2024, 2).daysInMonth())
+  }
+
+  @Test
+  fun `savings benchmark insight compares monthly savings rate against 20 percent target`() {
+    val highSavingsTxs = listOf(
+      TransactionEntity(
+        id = 1,
+        title = "Salary",
+        amountCentavos = 20_000_00L,
+        type = TransactionType.INCOME,
+        category = "Salary",
+        dateEpochDay = epochDayFromDate(2026, 11, 1),
+        paymentMethod = PaymentMethod.BANK_TRANSFER,
+      ),
+      TransactionEntity(
+        id = 2,
+        title = "Rent",
+        amountCentavos = 10_000_00L,
+        type = TransactionType.EXPENSE,
+        category = "Housing",
+        dateEpochDay = epochDayFromDate(2026, 11, 2),
+        paymentMethod = PaymentMethod.BANK_TRANSFER,
+      ),
+    )
+    val highInsights = FinanceCalculator.generateInsights(
+      transactions = highSavingsTxs,
+      budgetSummaries = emptyList(),
+      breakdown = FinanceCalculator.buildExpenseBreakdown(highSavingsTxs, emptyList(), nov),
+      selectedMonth = nov,
+      currencyCode = "PHP",
+    )
+    val highBenchmark = highInsights.firstOrNull { it.title == "Savings Benchmark" }
+    assertTrue(highBenchmark != null)
+    assertEquals(InsightSeverity.POSITIVE, highBenchmark?.severity)
+    assertTrue(highBenchmark!!.message.contains("exceeds the recommended 20% benchmark by 30.0"))
+
+    val lowSavingsTxs = listOf(
+      TransactionEntity(
+        id = 3,
+        title = "Salary",
+        amountCentavos = 20_000_00L,
+        type = TransactionType.INCOME,
+        category = "Salary",
+        dateEpochDay = epochDayFromDate(2026, 11, 1),
+        paymentMethod = PaymentMethod.BANK_TRANSFER,
+      ),
+      TransactionEntity(
+        id = 4,
+        title = "Expenses",
+        amountCentavos = 18_000_00L,
+        type = TransactionType.EXPENSE,
+        category = "Housing",
+        dateEpochDay = epochDayFromDate(2026, 11, 2),
+        paymentMethod = PaymentMethod.CASH,
+      ),
+    )
+    val lowInsights = FinanceCalculator.generateInsights(
+      transactions = lowSavingsTxs,
+      budgetSummaries = emptyList(),
+      breakdown = FinanceCalculator.buildExpenseBreakdown(lowSavingsTxs, emptyList(), nov),
+      selectedMonth = nov,
+      currencyCode = "PHP",
+    )
+    val lowBenchmark = lowInsights.firstOrNull { it.title == "Savings Benchmark" }
+    assertTrue(lowBenchmark != null)
+    assertEquals(InsightSeverity.INFO, lowBenchmark?.severity)
+    assertTrue(lowBenchmark!!.message.contains("10.0 percentage points below the recommended 20% benchmark"))
+  }
+
+  @Test
+  fun `resolveDistinctDonutColorHexes prevents duplicate and wrap-around color collisions`() {
+    val colliding = listOf(
+      CategoryBreakdown("Food and Dining", BigDecimal("4000.00"), BigDecimal("40.0"), 0xFFF43F5EL),
+      CategoryBreakdown("Education", BigDecimal("2500.00"), BigDecimal("25.0"), 0xFF7C3AEDL),
+      CategoryBreakdown("Entertainment", BigDecimal("2000.00"), BigDecimal("20.0"), 0xFF6366F1L),
+      CategoryBreakdown("Healthcare", BigDecimal("1500.00"), BigDecimal("15.0"), 0xFFF43F5EL),
+    )
+    val resolved = resolveDistinctDonutColorHexes(colliding)
+    assertEquals(4, resolved.size)
+    // First and last slice wrap around at 12 o'clock and must never share the same color
+    assertNotEquals(resolved.first(), resolved.last())
+    // All 4 slices must have distinct resolved colors
+    assertEquals(4, resolved.toSet().size)
   }
 }

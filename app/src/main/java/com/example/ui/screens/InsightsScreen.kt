@@ -550,10 +550,17 @@ fun InsightsScreen(
               style = MaterialTheme.typography.titleMedium,
             )
           }
+          Spacer(modifier = Modifier.height(4.dp))
+          Text(
+            text = "Tap any point to inspect daily spending",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
           Spacer(modifier = Modifier.height(10.dp))
           SpendingTrendLineChart(
             points = uiState.dailySpendingSeries,
             currencyCode = currency,
+            selectedMonth = uiState.selectedMonth,
           )
         }
       }

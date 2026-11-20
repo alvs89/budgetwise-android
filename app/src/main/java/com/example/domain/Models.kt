@@ -119,6 +119,16 @@ data class YearMonthKey(val year: Int, val month: Int) {
     }.format(cal.time)
   }
 
+  fun daysInMonth(): Int {
+    val cal = Calendar.getInstance(UTC_TIME_ZONE).apply {
+      clear()
+      set(Calendar.YEAR, year)
+      set(Calendar.MONTH, month - 1)
+      set(Calendar.DAY_OF_MONTH, 1)
+    }
+    return cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+  }
+
   fun monthNameUpper(): String = monthNameOnly().uppercase(Locale.getDefault())
 
   companion object {

@@ -381,22 +381,32 @@ object FinanceCalculator {
       }
     }
 
-    // 3. Savings rate
+    // 3. Savings rate benchmark insight
     if (currentIncome > BigDecimal.ZERO) {
       val isDeficit = currentExpenses > currentIncome
       val savingsRate = calculateSavingsRatePercent(currentIncome, currentExpenses)
+      val benchmark = BigDecimal("20.0")
       val severity = when {
         isDeficit -> InsightSeverity.WARNING
-        savingsRate >= BigDecimal("20.0") -> InsightSeverity.POSITIVE
+        savingsRate >= benchmark -> InsightSeverity.POSITIVE
         else -> InsightSeverity.INFO
       }
-      val msg = if (isDeficit) {
-        "Expenses exceeded income by ${displayAmt(currentExpenses.subtract(currentIncome))} this month."
-      } else {
-        "Your current savings rate is ${savingsRate.toPlainString()}% of monthly income."
+      val msg = when {
+        isDeficit ->
+          "Expenses exceeded income by ${displayAmt(currentExpenses.subtract(currentIncome))} this month."
+        savingsRate > benchmark -> {
+          val aheadBy = savingsRate.subtract(benchmark).setScale(1, RoundingMode.HALF_UP)
+          "Great job — your ${savingsRate.toPlainString()}% savings rate exceeds the recommended 20% benchmark by ${aheadBy.toPlainString()} percentage points."
+        }
+        savingsRate.compareTo(benchmark) == 0 ->
+          "Right on target — your ${savingsRate.toPlainString()}% savings rate meets the recommended 20% benchmark."
+        else -> {
+          val gap = benchmark.subtract(savingsRate).setScale(1, RoundingMode.HALF_UP)
+          "Your ${savingsRate.toPlainString()}% savings rate is ${gap.toPlainString()} percentage points below the recommended 20% benchmark."
+        }
       }
       insights += FinancialInsight(
-        title = if (isDeficit) "Monthly Deficit" else "Savings Rate",
+        title = if (isDeficit) "Monthly Deficit" else "Savings Benchmark",
         message = msg,
         severity = severity,
       )

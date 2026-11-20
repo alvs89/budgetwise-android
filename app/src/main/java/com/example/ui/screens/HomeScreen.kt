@@ -581,6 +581,7 @@ fun HomeScreen(
             SpendingTrendLineChart(
               points = uiState.dailySpendingSeries,
               currencyCode = currency,
+              selectedMonth = uiState.selectedMonth,
             )
           }
         }
