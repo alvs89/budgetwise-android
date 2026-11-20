@@ -102,6 +102,8 @@ import com.example.ui.screens.BudgetsScreen
 import com.example.ui.screens.GoalsScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.InsightsScreen
+import com.example.ui.screens.ManageCategoriesScreen
+import com.example.ui.screens.NotificationsSettingsScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.BudgetWiseTheme
 import com.example.ui.viewmodel.BudgetWiseViewModel
@@ -115,6 +117,8 @@ import java.io.File
 @Serializable object GoalsRoute
 @Serializable object InsightsRoute
 @Serializable object SettingsRoute
+@Serializable object ManageCategoriesRoute
+@Serializable object NotificationsSettingsRoute
 
 private data class TopLevelDestination(
   val route: Any,
@@ -215,7 +219,10 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
           val navController = rememberNavController()
           val backStackEntry by navController.currentBackStackEntryAsState()
           val currentDestination = backStackEntry?.destination
-          val isSettingsRoute = currentDestination?.hasRoute<SettingsRoute>() == true
+          val isSettingsRoute =
+            currentDestination?.hasRoute<SettingsRoute>() == true ||
+              currentDestination?.hasRoute<ManageCategoriesRoute>() == true ||
+              currentDestination?.hasRoute<NotificationsSettingsRoute>() == true
 
     var showTransactionSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionEntity?>(null) }
@@ -376,7 +383,10 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
         onMarkAllRead = viewModel::markAllAlertsAsRead,
         onMarkAllUnread = viewModel::markAllAlertsAsUnread,
         onClearAll = viewModel::clearAllAlerts,
-        onOpenSettings = { navController.navigate(SettingsRoute) },
+        onOpenSettings = {
+          showNotificationsSheet = false
+          navController.navigate(NotificationsSettingsRoute)
+        },
         onDismiss = { showNotificationsSheet = false },
       )
     }
@@ -568,23 +578,37 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                 onUpdateCurrency = viewModel::updatePreferredCurrency,
                 onUpdateThemeMode = viewModel::updateThemeMode,
                 onUpdateBalanceHidden = viewModel::setBalanceHidden,
-                onToggleBudgetAlerts = viewModel::setBudgetAlertsEnabled,
-                onToggleGoalAlerts = viewModel::setGoalAlertsEnabled,
-                onToggleDailyReminder = viewModel::setDailyReminderEnabled,
-                onUpdateBudgetWarningThreshold = viewModel::setBudgetWarningThreshold,
-                onUpdateDailyReminderTime = viewModel::setDailyReminderTime,
                 onVerifyCurrentPin = viewModel::verifyPin,
                 onEnableAppLockWithPin = viewModel::enableAppLockWithPin,
                 onChangeAppPin = viewModel::updateAppPin,
                 onToggleBiometricUnlock = viewModel::setBiometricUnlockEnabled,
                 onDisableAppLock = viewModel::disableAppLock,
                 onLockAppNow = viewModel::lockAppNow,
-                onAddCategory = viewModel::addCustomCategory,
-                onUpdateCategory = viewModel::updateCategory,
-                onDeleteCategory = viewModel::deleteCustomCategory,
+                onOpenManageCategories = { navController.navigate(ManageCategoriesRoute) },
+                onOpenNotificationsSettings = { navController.navigate(NotificationsSettingsRoute) },
                 onExportData = { showExportDialog = true },
                 onResetDemoData = viewModel::resetDemonstrationData,
                 onClearAllData = viewModel::clearAllRecords,
+              )
+            }
+            composable<ManageCategoriesRoute> {
+              ManageCategoriesScreen(
+                uiState = uiState,
+                onBack = { navController.popBackStack() },
+                onAddCategory = viewModel::addCustomCategory,
+                onUpdateCategory = viewModel::updateCategory,
+                onDeleteCategory = viewModel::deleteCustomCategory,
+              )
+            }
+            composable<NotificationsSettingsRoute> {
+              NotificationsSettingsScreen(
+                uiState = uiState,
+                onBack = { navController.popBackStack() },
+                onToggleBudgetAlerts = viewModel::setBudgetAlertsEnabled,
+                onToggleGoalAlerts = viewModel::setGoalAlertsEnabled,
+                onToggleDailyReminder = viewModel::setDailyReminderEnabled,
+                onUpdateBudgetWarningThreshold = viewModel::setBudgetWarningThreshold,
+                onUpdateDailyReminderTime = viewModel::setDailyReminderTime,
               )
             }
           }

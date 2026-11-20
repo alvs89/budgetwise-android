@@ -1,59 +1,49 @@
 package com.example.ui.screens
 
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Category
-import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockReset
 import androidx.compose.material.icons.rounded.NotificationsActive
-import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Pin
 import androidx.compose.material.icons.rounded.RestartAlt
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
-import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -63,12 +53,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,34 +66,23 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
-import com.example.data.local.entity.CategoryEntity
-import com.example.domain.AlertThresholdDefaults
 import com.example.domain.ThemeMode
 import com.example.domain.TransactionType
-import com.example.domain.compactCategoryLabel
-import com.example.notifications.BudgetWiseNotificationManager
-import com.example.ui.components.CategoryCustomizeDialog
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.CurrencyDropdown
-import com.example.ui.components.FintechCard
 import com.example.ui.components.PinDialogMode
 import com.example.ui.components.PinSetupOrVerifyDialog
-import com.example.ui.components.StableFormDialog
 import com.example.ui.components.budgetWiseSwitchColors
-import com.example.ui.components.categoryIcon
-import com.example.ui.components.categoryTint
 import com.example.ui.components.isBiometricAuthAvailable
 import com.example.ui.viewmodel.BudgetWiseUiState
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
   uiState: BudgetWiseUiState,
@@ -117,129 +91,27 @@ fun SettingsScreen(
   onUpdateCurrency: (String) -> Unit,
   onUpdateThemeMode: (ThemeMode) -> Unit,
   onUpdateBalanceHidden: (Boolean) -> Unit,
-  onToggleBudgetAlerts: (Boolean) -> Unit,
-  onToggleGoalAlerts: (Boolean) -> Unit,
-  onToggleDailyReminder: (Boolean) -> Unit,
-  onUpdateBudgetWarningThreshold: (Int) -> Unit,
-  onUpdateDailyReminderTime: (hour24: Int, minute: Int) -> Unit,
   onVerifyCurrentPin: (String) -> Boolean,
   onEnableAppLockWithPin: (pin: String, enableBiometric: Boolean) -> Unit,
   onChangeAppPin: (newPin: String) -> Unit,
   onToggleBiometricUnlock: (Boolean) -> Unit,
   onDisableAppLock: () -> Unit,
   onLockAppNow: () -> Unit,
-  onAddCategory: (String, TransactionType, String, Long) -> Unit,
-  onUpdateCategory: (CategoryEntity, String, String, Long) -> Unit,
-  onDeleteCategory: (CategoryEntity) -> Unit,
+  onOpenManageCategories: () -> Unit,
+  onOpenNotificationsSettings: () -> Unit,
   onExportData: () -> Unit,
   onResetDemoData: () -> Unit,
   onClearAllData: () -> Unit,
 ) {
   val context = LocalContext.current
   val biometricAvailable = remember(context) { isBiometricAuthAvailable(context) }
-  var hasNotificationPermission by remember {
-    mutableStateOf(BudgetWiseNotificationManager.hasNotificationPermission(context))
-  }
-  val notificationPermissionLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.RequestPermission(),
-  ) { granted ->
-    hasNotificationPermission = granted || BudgetWiseNotificationManager.hasNotificationPermission(context)
-  }
-
-  fun requestSystemNotificationPermissionIfNeeded() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-      notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-  }
 
   var nameInput by remember(uiState.preferences.displayName) {
     mutableStateOf(uiState.preferences.displayName)
   }
-  var showAddCategoryDialog by remember { mutableStateOf(false) }
-  var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
-  var showReminderTimePicker by remember { mutableStateOf(false) }
-  var pendingDeleteCategory by remember { mutableStateOf<CategoryEntity?>(null) }
   var showResetConfirm by remember { mutableStateOf(false) }
   var showClearConfirm by remember { mutableStateOf(false) }
   var activePinDialogMode by remember { mutableStateOf<PinDialogMode?>(null) }
-
-  if (showReminderTimePicker) {
-    val timePickerState = rememberTimePickerState(
-      initialHour = uiState.preferences.dailyReminderHour,
-      initialMinute = uiState.preferences.dailyReminderMinute,
-      is24Hour = false,
-    )
-    StableFormDialog(
-      onDismissRequest = { showReminderTimePicker = false },
-      title = { Text("Daily Reminder Time") },
-      confirmButton = {
-        Button(
-          onClick = {
-            onUpdateDailyReminderTime(timePickerState.hour, timePickerState.minute)
-            showReminderTimePicker = false
-          },
-          modifier = Modifier.testTag("confirm_reminder_time_button"),
-        ) {
-          Text("Save Time")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showReminderTimePicker = false }) {
-          Text("Cancel")
-        }
-      },
-    ) {
-      Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center,
-      ) {
-        TimePicker(state = timePickerState)
-      }
-    }
-  }
-
-  if (showAddCategoryDialog) {
-    CategoryCustomizeDialog(
-      editingCategory = null,
-      existingCategories = uiState.categories,
-      onSaveNew = { name, type, iconKey, colorHex ->
-        onAddCategory(name, type, iconKey, colorHex)
-        showAddCategoryDialog = false
-      },
-      onSaveEdit = { _, _, _, _ -> },
-      onDismiss = { showAddCategoryDialog = false },
-    )
-  }
-
-  editingCategory?.let { target ->
-    CategoryCustomizeDialog(
-      editingCategory = target,
-      existingCategories = uiState.categories,
-      onSaveNew = { _, _, _, _ -> },
-      onSaveEdit = { existing, newName, iconKey, colorHex ->
-        onUpdateCategory(existing, newName, iconKey, colorHex)
-        editingCategory = null
-      },
-      onRequestDelete = { cat ->
-        editingCategory = null
-        pendingDeleteCategory = cat
-      },
-      onDismiss = { editingCategory = null },
-    )
-  }
-
-  pendingDeleteCategory?.let { cat ->
-    ConfirmationDialog(
-      title = "Remove Category?",
-      message = "Remove custom category \"${cat.name}\"? Existing transactions using it will remain in your history.",
-      confirmLabel = "Remove",
-      onConfirm = {
-        onDeleteCategory(cat)
-        pendingDeleteCategory = null
-      },
-      onDismiss = { pendingDeleteCategory = null },
-    )
-  }
 
   if (showResetConfirm) {
     ConfirmationDialog(
@@ -257,10 +129,9 @@ fun SettingsScreen(
 
   if (showClearConfirm) {
     ConfirmationDialog(
-      title = "Delete All Financial Records?",
-      message = "All transactions, budgets, savings goals, and custom categories will be permanently removed from this device.",
-      confirmLabel = "Delete All",
-      isDestructive = true,
+      title = "Clear All Financial Records?",
+      message = "This permanently deletes all transactions, budgets, savings goals, and custom categories on this device. This cannot be undone.",
+      confirmLabel = "Clear All",
       onConfirm = {
         onClearAllData()
         showClearConfirm = false
@@ -274,8 +145,8 @@ fun SettingsScreen(
       mode = mode,
       biometricAvailable = biometricAvailable,
       onVerifyCurrentPin = onVerifyCurrentPin,
-      onCreatePin = { pin, enableBiometric ->
-        onEnableAppLockWithPin(pin, enableBiometric)
+      onCreatePin = { pin, enableBio ->
+        onEnableAppLockWithPin(pin, enableBio)
         activePinDialogMode = null
       },
       onChangePin = { newPin ->
@@ -290,23 +161,39 @@ fun SettingsScreen(
     )
   }
 
+  val subtleDividerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+  val emeraldSegmentedColors = SegmentedButtonDefaults.colors(
+    activeContainerColor = MaterialTheme.colorScheme.primaryContainer,
+    activeContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    activeBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+    inactiveContainerColor = Color.Transparent,
+    inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    inactiveBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f),
+  )
+
+  val incomeCount = remember(uiState.categories) {
+    uiState.categories.count { it.type == TransactionType.INCOME }
+  }
+  val expenseCount = remember(uiState.categories) {
+    uiState.categories.count { it.type == TransactionType.EXPENSE }
+  }
+
   Column(
-    modifier = Modifier.fillMaxSize(),
+    modifier = Modifier
+      .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background)
+      .navigationBarsPadding(),
   ) {
-    // Standard 56dp mobile app bar (outer BudgetWiseApp Scaffold already handles safeDrawing insets)
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .height(56.dp)
-        .padding(horizontal = 8.dp),
+        .padding(horizontal = 8.dp, vertical = 10.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       IconButton(
         onClick = onBack,
-        modifier = Modifier
-          .minimumInteractiveComponentSize()
-          .testTag("settings_back_button"),
+        modifier = Modifier.testTag("settings_back_button"),
       ) {
         Icon(
           imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -339,14 +226,25 @@ fun SettingsScreen(
         modifier = Modifier
           .widthIn(max = 760.dp)
           .fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
       ) {
-        // Profile
+        // Card 1: Account & Preferences (Display Name + Preferred Currency)
         item {
-          FintechCard(modifier = Modifier.fillMaxWidth()) {
-            SettingsCardHeader(icon = Icons.Rounded.Person, title = "Profile")
-            Spacer(modifier = Modifier.height(10.dp))
+          SettingsGroupCard {
+            SettingsCardHeader(
+              icon = Icons.Rounded.Person,
+              title = "Account & Preferences",
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Display Name with label above so the Save CTA aligns flush with the text box body
+            Text(
+              text = "Display Name",
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -355,8 +253,9 @@ fun SettingsScreen(
               OutlinedTextField(
                 value = nameInput,
                 onValueChange = { nameInput = it },
-                label = { Text("Display Name") },
+                placeholder = { Text("Your name") },
                 singleLine = true,
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                   .weight(1f)
                   .testTag("settings_name_input"),
@@ -364,18 +263,30 @@ fun SettingsScreen(
               Button(
                 onClick = { onUpdateDisplayName(nameInput) },
                 enabled = nameInput.isNotBlank() && nameInput.trim() != uiState.preferences.displayName,
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp),
+                modifier = Modifier
+                  .height(56.dp)
+                  .testTag("settings_save_name_button"),
               ) {
-                Text("Save")
+                Text(
+                  text = "Save",
+                  style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                )
               }
             }
-          }
-        }
 
-        // Preferred Currency
-        item {
-          FintechCard(modifier = Modifier.fillMaxWidth()) {
-            SettingsCardHeader(icon = Icons.Rounded.Payments, title = "Preferred Currency")
-            Spacer(modifier = Modifier.height(10.dp))
+            HorizontalDivider(
+              modifier = Modifier.padding(vertical = 14.dp),
+              color = subtleDividerColor,
+            )
+
+            Text(
+              text = "Preferred Currency",
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
             CurrencyDropdown(
               selectedCurrencyCode = uiState.preferences.preferredCurrency,
               onSelectCurrency = onUpdateCurrency,
@@ -383,30 +294,44 @@ fun SettingsScreen(
           }
         }
 
-        // Theme & Privacy Display
+        // Card 2: Appearance & Security (Theme + Hide Balances + 4-Digit PIN Lock)
         item {
-          FintechCard(modifier = Modifier.fillMaxWidth()) {
-            SettingsCardHeader(icon = Icons.Rounded.Palette, title = "Appearance & Privacy")
-            Spacer(modifier = Modifier.height(10.dp))
+          SettingsGroupCard {
+            SettingsCardHeader(
+              icon = Icons.Rounded.Tune,
+              title = "Appearance & Security",
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
               ThemeMode.entries.forEachIndexed { idx, mode ->
                 SegmentedButton(
                   selected = uiState.preferences.themeMode == mode,
                   onClick = { onUpdateThemeMode(mode) },
                   shape = SegmentedButtonDefaults.itemShape(idx, ThemeMode.entries.size),
+                  colors = emeraldSegmentedColors,
                   modifier = Modifier.testTag("theme_mode_${mode.name.lowercase()}"),
                 ) {
-                  Text(mode.label.replace(" default", ""))
+                  Text(
+                    text = mode.label.replace(" default", ""),
+                    maxLines = 1,
+                    softWrap = false,
+                  )
                 }
               }
             }
-            Spacer(modifier = Modifier.height(14.dp))
+
+            HorizontalDivider(
+              modifier = Modifier.padding(vertical = 14.dp),
+              color = subtleDividerColor,
+            )
+
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically,
             ) {
-              Column(modifier = Modifier.weight(1f)) {
+              Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                 Text("Hide Balances", style = MaterialTheme.typography.titleSmall)
                 Text(
                   text = "Mask monetary amounts across cards and charts",
@@ -421,14 +346,12 @@ fun SettingsScreen(
                 modifier = Modifier.testTag("settings_privacy_switch"),
               )
             }
-          }
-        }
 
-        // Security & App Lock
-        item {
-          FintechCard(modifier = Modifier.fillMaxWidth()) {
-            SettingsCardHeader(icon = Icons.Rounded.Shield, title = "Security & App Lock")
-            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(
+              modifier = Modifier.padding(vertical = 14.dp),
+              color = subtleDividerColor,
+            )
+
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -502,6 +425,7 @@ fun SettingsScreen(
               ) {
                 OutlinedButton(
                   onClick = { activePinDialogMode = PinDialogMode.CHANGE },
+                  shape = RoundedCornerShape(12.dp),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                   modifier = Modifier
                     .weight(1f)
@@ -517,6 +441,7 @@ fun SettingsScreen(
                 }
                 OutlinedButton(
                   onClick = onLockAppNow,
+                  shape = RoundedCornerShape(12.dp),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                   modifier = Modifier
                     .weight(1f)
@@ -543,364 +468,236 @@ fun SettingsScreen(
           }
         }
 
-        // Alerts & Notifications
+        // Card 3: Customization & Alerts (Two identical, aligned navigation rows)
         item {
-          FintechCard(
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("settings_alerts_card"),
+          Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+            modifier = Modifier.fillMaxWidth(),
           ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+              SettingsNavigationRow(
+                icon = Icons.Rounded.Category,
+                title = "Financial Categories",
+                subtitle = "$incomeCount income · $expenseCount expense categories",
+                contentDescription = "Manage financial categories",
+                onClick = onOpenManageCategories,
+                testTag = "settings_financial_categories_row",
+              )
+              HorizontalDivider(
+                color = subtleDividerColor,
+                modifier = Modifier.padding(start = 66.dp, end = 16.dp),
+              )
+              SettingsNavigationRow(
+                icon = Icons.Rounded.NotificationsActive,
+                title = "Alerts & Notifications",
+                subtitle = "Budget limits, milestones & reminders",
+                contentDescription = "Manage alerts and notifications",
+                onClick = onOpenNotificationsSettings,
+                testTag = "settings_alerts_navigation_row",
+              )
+            }
+          }
+        }
+
+        // Card 4: Data Management
+        item {
+          SettingsGroupCard {
             SettingsCardHeader(
-              icon = Icons.Rounded.NotificationsActive,
-              title = "Alerts & Notifications",
-              subtitle = "Stay informed about spending limits, milestones, and daily logs",
+              icon = Icons.Rounded.Storage,
+              title = "Data Management",
             )
             Spacer(modifier = Modifier.height(12.dp))
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-              Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+            Column(
+              modifier = Modifier.fillMaxWidth(),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              FilledTonalButton(
+                onClick = onExportData,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                  containerColor = MaterialTheme.colorScheme.primaryContainer,
+                  contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
                 modifier = Modifier
                   .fillMaxWidth()
-                  .padding(bottom = 12.dp),
+                  .heightIn(min = 48.dp)
+                  .testTag("settings_export_data_button"),
               ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                  horizontalArrangement = Arrangement.spacedBy(10.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  Text(
-                    text = "Allow system notifications to see alerts outside the app. In-app Notification Center stays active either way.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.weight(1f),
-                  )
-                  TextButton(
-                    onClick = { requestSystemNotificationPermissionIfNeeded() },
-                    modifier = Modifier.testTag("settings_allow_notifications_button"),
-                  ) {
-                    Text("Allow", maxLines = 1, softWrap = false)
-                  }
-                }
-              }
-            }
-
-            // 1. Budget Threshold Alerts
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("Budget Threshold Alerts", style = MaterialTheme.typography.titleSmall)
+                Icon(
+                  imageVector = Icons.Rounded.FileDownload,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.primary,
+                )
                 Text(
-                  text = "Alert when spending nears your warning threshold or exceeds 100%",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  text = stringResource(R.string.export_action_label),
+                  style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                  modifier = Modifier.padding(start = 8.dp),
                 )
               }
-              Switch(
-                checked = uiState.preferences.budgetAlertsEnabled,
-                onCheckedChange = { enabled ->
-                  if (enabled) requestSystemNotificationPermissionIfNeeded()
-                  onToggleBudgetAlerts(enabled)
-                },
-                colors = budgetWiseSwitchColors(),
-                modifier = Modifier.testTag("settings_budget_alerts_switch"),
-              )
-            }
-
-            if (uiState.preferences.budgetAlertsEnabled) {
-              Spacer(modifier = Modifier.height(10.dp))
-              Text(
-                text = "Approaching Limit Warning Threshold",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              Spacer(modifier = Modifier.height(8.dp))
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                AlertThresholdDefaults.WARNING_THRESHOLD_OPTIONS.forEach { pct ->
-                  val isSelected = uiState.preferences.budgetWarningThresholdPercent == pct
-                  Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (isSelected) {
-                      MaterialTheme.colorScheme.secondaryContainer
-                    } else {
-                      MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                    },
-                    border = BorderStroke(
-                      width = if (isSelected) 1.dp else 0.75.dp,
-                      color = if (isSelected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
-                      } else {
-                        MaterialTheme.colorScheme.outline
-                      },
-                    ),
-                    modifier = Modifier
-                      .weight(1f)
-                      .height(38.dp)
-                      .clip(RoundedCornerShape(10.dp))
-                      .clickable(role = Role.RadioButton) { onUpdateBudgetWarningThreshold(pct) }
-                      .semantics { selected = isSelected }
-                      .testTag("settings_threshold_chip_$pct"),
-                  ) {
-                    Box(contentAlignment = Alignment.Center) {
-                      Text(
-                        text = "$pct%",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                          fontSize = 12.sp,
-                          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        ),
-                        color = if (isSelected) {
-                          MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                          MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        maxLines = 1,
-                        softWrap = false,
-                      )
-                    }
-                  }
-                }
-              }
-              Text(
-                text = "Exceeding 100% of any monthly budget always sends an urgent alert.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-              )
-            }
-
-            HorizontalDivider(
-              modifier = Modifier.padding(vertical = 12.dp),
-              color = MaterialTheme.colorScheme.outlineVariant,
-            )
-
-            // 2. Savings Goal Milestones & Deadlines
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("Goal Milestones & Deadlines", style = MaterialTheme.typography.titleSmall)
-                Text(
-                  text = "Celebrate 50%, 75%, and 100% progress and remind 7 days before target date",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              Switch(
-                checked = uiState.preferences.goalAlertsEnabled,
-                onCheckedChange = { enabled ->
-                  if (enabled) requestSystemNotificationPermissionIfNeeded()
-                  onToggleGoalAlerts(enabled)
-                },
-                colors = budgetWiseSwitchColors(),
-                modifier = Modifier.testTag("settings_goal_alerts_switch"),
-              )
-            }
-
-            HorizontalDivider(
-              modifier = Modifier.padding(vertical = 12.dp),
-              color = MaterialTheme.colorScheme.outlineVariant,
-            )
-
-            // 3. Daily Logging Reminder
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("Daily Logging Reminder", style = MaterialTheme.typography.titleSmall)
-                Text(
-                  text = "Gentle evening nudge if no transactions were logged that day",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              Switch(
-                checked = uiState.preferences.dailyReminderEnabled,
-                onCheckedChange = { enabled ->
-                  if (enabled) requestSystemNotificationPermissionIfNeeded()
-                  onToggleDailyReminder(enabled)
-                },
-                colors = budgetWiseSwitchColors(),
-                modifier = Modifier.testTag("settings_daily_reminder_switch"),
-              )
-            }
-
-            if (uiState.preferences.dailyReminderEnabled) {
-              Spacer(modifier = Modifier.height(10.dp))
-              val formattedReminderTime = AlertThresholdDefaults.formatReminderTime(
-                uiState.preferences.dailyReminderHour,
-                uiState.preferences.dailyReminderMinute,
-              )
-              Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+              OutlinedButton(
+                onClick = { showResetConfirm = true },
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.75f)),
                 modifier = Modifier
                   .fillMaxWidth()
-                  .clip(MaterialTheme.shapes.small)
-                  .clickable { showReminderTimePicker = true }
-                  .testTag("settings_reminder_time_button"),
+                  .heightIn(min = 48.dp)
+                  .testTag("reset_demo_button"),
               ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                  ) {
-                    Icon(
-                      imageVector = Icons.Rounded.Schedule,
-                      contentDescription = null,
-                      tint = MaterialTheme.colorScheme.primary,
-                      modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                      text = "Reminder Time",
-                      style = MaterialTheme.typography.titleSmall,
-                    )
-                  }
-                  Text(
-                    text = formattedReminderTime,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary,
-                  )
-                }
-              }
-            }
-          }
-        }
-
-        // Financial Categories
-        item {
-          FintechCard(modifier = Modifier.fillMaxWidth()) {
-            SettingsCardHeader(
-              icon = Icons.Rounded.Category,
-              title = "Financial Categories",
-              subtitle = "Tap any category to customize its icon & color",
-              trailing = {
-                TextButton(
-                  onClick = { showAddCategoryDialog = true },
-                  modifier = Modifier.testTag("add_category_button"),
-                ) {
-                  Icon(Icons.Rounded.Add, contentDescription = null)
-                  Text("Add")
-                }
-              },
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Text("Income", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(4.dp))
-            FlowRow(
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-              uiState.categories.filter { it.type == TransactionType.INCOME }.forEach { cat ->
-                CategoryChipItem(
-                  category = cat,
-                  onCustomize = { editingCategory = cat },
-                  onRequestConfirmDelete = { pendingDeleteCategory = cat },
+                Icon(Icons.Rounded.RestartAlt, contentDescription = null)
+                Text(
+                  text = "Reset to Demonstration Data",
+                  modifier = Modifier.padding(start = 8.dp),
                 )
               }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text("Expenses", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
-            Spacer(modifier = Modifier.height(4.dp))
-            FlowRow(
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-              uiState.categories.filter { it.type == TransactionType.EXPENSE }.forEach { cat ->
-                CategoryChipItem(
-                  category = cat,
-                  onCustomize = { editingCategory = cat },
-                  onRequestConfirmDelete = { pendingDeleteCategory = cat },
+              OutlinedButton(
+                onClick = { showClearConfirm = true },
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .heightIn(min = 48.dp)
+                  .testTag("clear_all_data_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.Rounded.DeleteForever,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                  text = "Clear All Financial Records",
+                  color = MaterialTheme.colorScheme.error,
+                  modifier = Modifier.padding(start = 8.dp),
                 )
               }
             }
           }
         }
 
-        // Data Management
+        // Quiet Unboxed Footer (Privacy & Version Info)
         item {
-          FintechCard(modifier = Modifier.fillMaxWidth()) {
-            SettingsCardHeader(icon = Icons.Rounded.Storage, title = "Data & Demonstration Records")
-            Spacer(modifier = Modifier.height(10.dp))
-            FilledTonalButton(
-              onClick = onExportData,
-              modifier = Modifier
-                .fillMaxWidth()
-                .testTag("settings_export_data_button"),
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.Center,
             ) {
-              Icon(Icons.Rounded.FileDownload, contentDescription = null)
+              Icon(
+                imageVector = Icons.Rounded.Lock,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                modifier = Modifier.size(14.dp),
+              )
+              Spacer(modifier = Modifier.width(6.dp))
               Text(
-                text = stringResource(R.string.export_action_label),
-                modifier = Modifier.padding(start = 8.dp),
+                text = "Offline-First Private Storage",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
               )
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(
-              onClick = { showResetConfirm = true },
-              modifier = Modifier
-                .fillMaxWidth()
-                .testTag("reset_demo_button"),
-            ) {
-              Icon(Icons.Rounded.RestartAlt, contentDescription = null)
-              Text("Reset to Demonstration Data", modifier = Modifier.padding(start = 8.dp))
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(
-              onClick = { showClearConfirm = true },
-              modifier = Modifier
-                .fillMaxWidth()
-                .testTag("clear_all_data_button"),
-            ) {
-              Icon(Icons.Rounded.DeleteForever, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-              Text(
-                text = "Clear All Financial Records",
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 8.dp),
-              )
-            }
-          }
-        }
-
-        // App & Privacy Info
-        item {
-          FintechCard(modifier = Modifier.fillMaxWidth()) {
-            SettingsCardHeader(icon = Icons.Rounded.Lock, title = "Privacy & Application Info")
-            Spacer(modifier = Modifier.height(8.dp))
             Text(
               text = stringResource(R.string.privacy_notice),
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+              textAlign = TextAlign.Center,
             )
-            Spacer(modifier = Modifier.height(8.dp))
             Text(
               text = stringResource(R.string.app_info_footer),
-              style = MaterialTheme.typography.labelMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+              textAlign = TextAlign.Center,
             )
           }
         }
       }
     }
+  }
+}
+
+@Composable
+private fun SettingsGroupCard(
+  modifier: Modifier = Modifier,
+  content: @Composable ColumnScope.() -> Unit,
+) {
+  Surface(
+    shape = RoundedCornerShape(16.dp),
+    color = MaterialTheme.colorScheme.surface,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+    modifier = modifier.fillMaxWidth(),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      content = content,
+    )
+  }
+}
+
+@Composable
+private fun SettingsNavigationRow(
+  icon: ImageVector,
+  title: String,
+  subtitle: String,
+  contentDescription: String,
+  onClick: () -> Unit,
+  testTag: String,
+) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .heightIn(min = 64.dp)
+      .clickable(onClick = onClick)
+      .padding(horizontal = 16.dp, vertical = 12.dp)
+      .testTag(testTag),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(14.dp),
+  ) {
+    Box(
+      modifier = Modifier
+        .size(36.dp)
+        .clip(CircleShape)
+        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+      contentAlignment = Alignment.Center,
+    ) {
+      Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.size(20.dp),
+      )
+    }
+    Column(
+      modifier = Modifier.weight(1f),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Text(
+        text = subtitle,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+    Icon(
+      imageVector = Icons.Rounded.ChevronRight,
+      contentDescription = contentDescription,
+      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.size(22.dp),
+    )
   }
 }
 
@@ -908,102 +705,22 @@ fun SettingsScreen(
 private fun SettingsCardHeader(
   icon: ImageVector,
   title: String,
-  subtitle: String? = null,
-  trailing: (@Composable () -> Unit)? = null,
 ) {
   Row(
     modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
   ) {
-    Column(
-      modifier = Modifier.weight(1f),
-      verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        Icon(
-          imageVector = icon,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(20.dp),
-        )
-        Text(
-          text = title,
-          style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.onSurface,
-        )
-      }
-      if (subtitle != null) {
-        Text(
-          text = subtitle,
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-    }
-    trailing?.invoke()
+    Icon(
+      imageVector = icon,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.size(20.dp),
+    )
+    Text(
+      text = title,
+      style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+      color = MaterialTheme.colorScheme.onSurface,
+    )
   }
-}
-
-@Composable
-private fun CategoryChipItem(
-  category: CategoryEntity,
-  onCustomize: () -> Unit,
-  onRequestConfirmDelete: () -> Unit,
-) {
-  val categoryList = remember(category) { listOf(category) }
-  val icon = categoryIcon(category.name, categoryList)
-  val tint = categoryTint(category.name, categoryList)
-
-  InputChip(
-    selected = false,
-    onClick = onCustomize,
-    leadingIcon = {
-      Icon(
-        imageVector = icon,
-        contentDescription = null,
-        tint = tint,
-        modifier = Modifier.size(16.dp),
-      )
-    },
-    label = {
-      Text(
-        text = compactCategoryLabel(category.name),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
-    },
-    colors = if (!category.isDefault) {
-      InputChipDefaults.inputChipColors(
-        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
-      )
-    } else {
-      InputChipDefaults.inputChipColors()
-    },
-    trailingIcon = if (!category.isDefault) {
-      {
-        Box(
-          modifier = Modifier
-            .size(20.dp)
-            .clip(CircleShape)
-            .clickable(onClick = onRequestConfirmDelete),
-          contentAlignment = Alignment.Center,
-        ) {
-          Icon(
-            imageVector = Icons.Rounded.Close,
-            contentDescription = "Delete ${category.name}",
-            modifier = Modifier.size(15.dp),
-          )
-        }
-      }
-    } else {
-      null
-    },
-    modifier = Modifier.testTag(
-      "settings_category_chip_${category.name.lowercase().replace(Regex("[^a-z0-9]+"), "_")}"
-    ),
-  )
 }

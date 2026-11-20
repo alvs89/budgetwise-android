@@ -351,6 +351,7 @@ fun CategoryPickerBottomSheet(
 fun CategoryCustomizeDialog(
   editingCategory: CategoryEntity?,
   existingCategories: List<CategoryEntity>,
+  initialType: TransactionType = TransactionType.EXPENSE,
   onSaveNew: (name: String, type: TransactionType, iconKey: String, colorHex: Long) -> Unit,
   onSaveEdit: (existing: CategoryEntity, newName: String, iconKey: String, colorHex: Long) -> Unit,
   onRequestDelete: ((CategoryEntity) -> Unit)? = null,
@@ -360,8 +361,8 @@ fun CategoryCustomizeDialog(
   val isDefaultCategory = editingCategory?.isDefault == true
 
   var name by remember(editingCategory) { mutableStateOf(editingCategory?.name ?: "") }
-  var type by remember(editingCategory) {
-    mutableStateOf(editingCategory?.type ?: TransactionType.EXPENSE)
+  var type by remember(editingCategory, initialType) {
+    mutableStateOf(editingCategory?.type ?: initialType)
   }
   var manualIconKey by remember(editingCategory) { mutableStateOf(editingCategory?.iconKey) }
   var manualColorHex by remember(editingCategory) { mutableStateOf(editingCategory?.colorHex) }
