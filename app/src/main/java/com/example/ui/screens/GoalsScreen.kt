@@ -265,7 +265,7 @@ fun GoalsScreen(
                 ) {
                   Text(
                     text = "${uiState.goalSummaries.count { it.status == GoalStatus.COMPLETED }}/${uiState.goalSummaries.size} completed",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = Color.White,
                     maxLines = 1,
                     softWrap = false,
@@ -286,7 +286,7 @@ fun GoalsScreen(
 
               Text(
                 text = "Combined goal targets: ${FinanceCalculator.formatCurrencyOrMasked(totalTarget, currency, isHidden)}",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.78f),
               )
             }

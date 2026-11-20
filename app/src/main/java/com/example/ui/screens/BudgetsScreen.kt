@@ -241,7 +241,7 @@ fun BudgetsScreen(
                 ) {
                   Text(
                     text = "${overallUtil.toPlainString()}% used",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = Color.White,
                     maxLines = 1,
                     softWrap = false,

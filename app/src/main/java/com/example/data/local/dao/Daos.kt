@@ -185,7 +185,11 @@ interface SavingsGoalDao {
 
 @Dao
 interface CategoryDao {
-  @Query("SELECT * FROM categories ORDER BY isDefault DESC, name ASC")
+  @Query(
+    "SELECT * FROM categories ORDER BY " +
+      "CASE WHEN LOWER(TRIM(name)) = 'other' OR LOWER(TRIM(name)) = 'others' OR LOWER(TRIM(name)) LIKE 'other %' THEN 1 ELSE 0 END ASC, " +
+      "isDefault DESC, name ASC"
+  )
   fun observeAllCategories(): Flow<List<CategoryEntity>>
 
   @Query("SELECT COUNT(*) FROM categories")

@@ -296,7 +296,11 @@ fun SettingsScreen(
       }
       Text(
         text = stringResource(R.string.nav_settings),
-        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+        style = MaterialTheme.typography.titleLarge.copy(
+          fontSize = 22.sp,
+          fontWeight = FontWeight.Bold,
+          letterSpacing = (-0.5).sp,
+        ),
         color = MaterialTheme.colorScheme.onBackground,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,

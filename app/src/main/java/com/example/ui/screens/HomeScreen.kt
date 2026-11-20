@@ -400,7 +400,7 @@ fun HomeScreen(
                 ) {
                   Text(
                     text = badgeText,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = if (isDeficit) Color(0xFFFECACA) else Color.White,
                     maxLines = 1,
                     softWrap = false,
@@ -427,7 +427,7 @@ fun HomeScreen(
                 } else {
                   "Calculated from recorded monthly transactions (not a bank account balance)."
                 },
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.72f),
               )
             }
