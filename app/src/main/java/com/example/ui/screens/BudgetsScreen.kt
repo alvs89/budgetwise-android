@@ -316,7 +316,10 @@ fun BudgetsScreen(
         }
       } else {
         item {
-          SectionHeader(title = "Category limits (${uiState.budgetSummaries.size})")
+          SectionHeader(
+            title = "Category limits (${uiState.budgetSummaries.size})",
+            icon = Icons.Rounded.AccountBalanceWallet,
+          )
         }
         items(uiState.budgetSummaries, key = { it.budgetId }) { summary ->
           SwipeToRevealDeleteRow(

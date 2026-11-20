@@ -81,6 +81,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -825,84 +829,95 @@ private fun ChatMessageBubble(
       }
     }
 
-    // Compact icon-only actions directly beneath each message bubble
-    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
-      Row(
-        modifier = Modifier.padding(top = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        IconButton(
-          onClick = {
-            copyMessageToClipboard(context, message.content)
-            copiedRecently = true
-          },
-          modifier = Modifier
-            .size(32.dp)
-            .testTag("chat_copy_message_${message.id}"),
-        ) {
-          Icon(
-            imageVector = if (copiedRecently) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-            contentDescription = stringResource(
-              if (copiedRecently) R.string.chat_copied_message else R.string.chat_copy_message,
-            ),
-            tint = if (copiedRecently) {
-              MaterialTheme.colorScheme.primary
-            } else {
-              MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            modifier = Modifier.size(16.dp),
-          )
-        }
-
-        if (isUser) {
-          IconButton(
-            onClick = onEditClick,
-            enabled = actionsEnabled,
-            modifier = Modifier
-              .size(32.dp)
-              .testTag("chat_edit_message_${message.id}"),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.Edit,
-              contentDescription = stringResource(R.string.chat_edit_message),
-              tint = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.size(16.dp),
-            )
-          }
+    // Compact, tightly grouped icon-only actions directly beneath each message bubble
+    Row(
+      modifier = Modifier.padding(top = 2.dp),
+      horizontalArrangement = Arrangement.spacedBy(0.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      val copyLabel = stringResource(
+        if (copiedRecently) R.string.chat_copied_message else R.string.chat_copy_message,
+      )
+      CompactChatActionIcon(
+        icon = if (copiedRecently) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+        contentDescription = copyLabel,
+        tint = if (copiedRecently) {
+          MaterialTheme.colorScheme.primary
         } else {
-          IconButton(
-            onClick = onRegenerateClick,
-            enabled = actionsEnabled,
-            modifier = Modifier
-              .size(32.dp)
-              .testTag("chat_regenerate_message_${message.id}"),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.Refresh,
-              contentDescription = stringResource(R.string.chat_regenerate),
-              tint = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.size(17.dp),
-            )
-          }
-        }
+          MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        iconSize = 15.dp,
+        enabled = true,
+        testTag = "chat_copy_message_${message.id}",
+        onClick = {
+          copyMessageToClipboard(context, message.content)
+          copiedRecently = true
+        },
+      )
 
-        IconButton(
-          onClick = onDeleteClick,
+      if (isUser) {
+        CompactChatActionIcon(
+          icon = Icons.Rounded.Edit,
+          contentDescription = stringResource(R.string.chat_edit_message),
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          iconSize = 15.dp,
           enabled = actionsEnabled,
-          modifier = Modifier
-            .size(32.dp)
-            .testTag("chat_delete_message_${message.id}"),
-        ) {
-          Icon(
-            imageVector = Icons.Rounded.DeleteOutline,
-            contentDescription = stringResource(R.string.chat_delete_message),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(17.dp),
-          )
-        }
+          testTag = "chat_edit_message_${message.id}",
+          onClick = onEditClick,
+        )
+      } else {
+        CompactChatActionIcon(
+          icon = Icons.Rounded.Refresh,
+          contentDescription = stringResource(R.string.chat_regenerate),
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          iconSize = 16.dp,
+          enabled = actionsEnabled,
+          testTag = "chat_regenerate_message_${message.id}",
+          onClick = onRegenerateClick,
+        )
       }
+
+      CompactChatActionIcon(
+        icon = Icons.Rounded.DeleteOutline,
+        contentDescription = stringResource(R.string.chat_delete_message),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        iconSize = 16.dp,
+        enabled = actionsEnabled,
+        testTag = "chat_delete_message_${message.id}",
+        onClick = onDeleteClick,
+      )
     }
+  }
+}
+
+@Composable
+private fun CompactChatActionIcon(
+  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  contentDescription: String,
+  tint: androidx.compose.ui.graphics.Color,
+  iconSize: Dp,
+  enabled: Boolean,
+  testTag: String,
+  onClick: () -> Unit,
+) {
+  Box(
+    modifier = Modifier
+      .size(26.dp)
+      .clip(CircleShape)
+      .clickable(enabled = enabled, onClick = onClick)
+      .semantics {
+        this.role = Role.Button
+        this.contentDescription = contentDescription
+      }
+      .testTag(testTag),
+    contentAlignment = Alignment.Center,
+  ) {
+    Icon(
+      imageVector = icon,
+      contentDescription = null,
+      tint = if (enabled) tint else tint.copy(alpha = 0.4f),
+      modifier = Modifier.size(iconSize),
+    )
   }
 }
 

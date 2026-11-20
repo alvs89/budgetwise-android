@@ -6,6 +6,7 @@ import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.ChatMessageEntity
 import com.example.data.local.entity.ChatSessionEntity
+import com.example.data.local.entity.FinancialAlertEntity
 import com.example.data.local.entity.SavingsContributionEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
@@ -33,6 +34,7 @@ class BudgetWiseRepository(
   private val categoryDao = database.categoryDao()
   private val chatSessionDao = database.chatSessionDao()
   private val chatMessageDao = database.chatMessageDao()
+  private val financialAlertDao = database.financialAlertDao()
   private val seedMutex = Mutex()
 
   val transactions: Flow<List<TransactionEntity>> = transactionDao.observeAllTransactions()
@@ -43,6 +45,7 @@ class BudgetWiseRepository(
   val categories: Flow<List<CategoryEntity>> = categoryDao.observeAllCategories()
   val chatSessions: Flow<List<ChatSessionEntity>> = chatSessionDao.observeAllSessions()
   val chatMessages: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAllMessages()
+  val financialAlerts: Flow<List<FinancialAlertEntity>> = financialAlertDao.observeAllAlerts()
 
   /**
    * Populates default categories and initial demonstration records once on first launch when
@@ -71,6 +74,7 @@ class BudgetWiseRepository(
       budgetDao.deleteAll()
       savingsGoalDao.deleteAllContributions()
       savingsGoalDao.deleteAllGoals()
+      financialAlertDao.deleteAll()
       if (categoryDao.count() == 0) {
         categoryDao.insertAll(SampleDataSeeder.defaultCategories())
       }
@@ -88,6 +92,7 @@ class BudgetWiseRepository(
       categoryDao.deleteCustomCategories()
       chatMessageDao.deleteAll()
       chatSessionDao.deleteAll()
+      financialAlertDao.deleteAll()
       preferencesRepository.markInitialDataSeeded()
     }
   }
@@ -220,5 +225,36 @@ class BudgetWiseRepository(
   suspend fun clearChatHistory() {
     chatMessageDao.deleteAll()
     chatSessionDao.deleteAll()
+  }
+
+  // Financial Alerts
+  /**
+   * Persists [alert] if its [FinancialAlertEntity.dedupeKey] has not been recorded yet.
+   * Returns the persisted [FinancialAlertEntity] (with generated id) when newly inserted, or null
+   * if it was a duplicate.
+   */
+  suspend fun insertAlertIfNew(alert: FinancialAlertEntity): FinancialAlertEntity? {
+    val insertedId = financialAlertDao.insertIgnore(alert)
+    return if (insertedId > 0L) alert.copy(id = insertedId) else null
+  }
+
+  suspend fun markAlertAsRead(id: Long) {
+    financialAlertDao.markAsRead(id)
+  }
+
+  suspend fun markAllAlertsAsRead() {
+    financialAlertDao.markAllAsRead()
+  }
+
+  suspend fun deleteAlert(id: Long) {
+    financialAlertDao.deleteById(id)
+  }
+
+  suspend fun clearAlertDedupePrefix(prefix: String) {
+    financialAlertDao.deleteByDedupeKeyPrefix(prefix)
+  }
+
+  suspend fun clearAllAlerts() {
+    financialAlertDao.deleteAll()
   }
 }

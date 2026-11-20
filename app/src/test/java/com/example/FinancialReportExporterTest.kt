@@ -1,5 +1,8 @@
 package com.example
 
+import android.content.Intent
+import android.net.Uri
+import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.domain.ExportFormat
@@ -9,21 +12,22 @@ import com.example.domain.PaymentMethod
 import com.example.domain.TransactionType
 import com.example.domain.YearMonthKey
 import com.example.domain.epochDayFromDate
+import com.example.ui.buildShareExportChooserIntent
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.ByteArrayOutputStream
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class FinancialReportExporterTest {
 
   private val nov2026 = YearMonthKey(2026, 11)
-  private val oct2026 = YearMonthKey(2026, 10)
 
   private fun sampleTransactions(): List<TransactionEntity> = listOf(
     TransactionEntity(
@@ -86,15 +90,19 @@ class FinancialReportExporterTest {
       selectedMonth = nov2026,
       allTransactions = sampleTransactions(),
       allBudgets = sampleBudgets(),
-      scope = ExportScope.SELECTED_MONTH,
+      scope = ExportScope.MONTH,
       includeTransactions = true,
       includeBudgets = true,
       generatedEpochDay = epochDayFromDate(2026, 11, 19),
     )
 
     val csv = FinancialReportExporter.buildCsvReport(report)
+    val csvBytes = FinancialReportExporter.buildCsvBytes(report)
 
     assertTrue("CSV should start with UTF-8 BOM for Excel compatibility", csv.startsWith("\uFEFF"))
+    assertEquals(0xEF.toByte(), csvBytes[0])
+    assertEquals(0xBB.toByte(), csvBytes[1])
+    assertEquals(0xBF.toByte(), csvBytes[2])
     assertTrue(csv.contains("BudgetWise Financial Report"))
     assertTrue(csv.contains("Period,November 2026"))
     assertTrue(csv.contains("Currency,PHP"))
@@ -114,6 +122,44 @@ class FinancialReportExporterTest {
     assertTrue(csv.contains("2350.50,-2350.50,PHP"))
     assertTrue(csv.contains("45000.00,45000.00,PHP"))
     assertFalse(csv.contains("October Internet Bill"))
+  }
+
+  @Test
+  fun `custom date range scope filters transactions and includes overlapping monthly budgets`() {
+    val startDay = epochDayFromDate(2026, 10, 10)
+    val endDay = epochDayFromDate(2026, 11, 3)
+
+    // Pass end before start to verify order normalization
+    val report = FinancialReportExporter.buildReportData(
+      ownerName = "Alvin",
+      currencyCode = "PHP",
+      selectedMonth = nov2026,
+      allTransactions = sampleTransactions(),
+      allBudgets = sampleBudgets(),
+      scope = ExportScope.CUSTOM_RANGE,
+      includeTransactions = true,
+      includeBudgets = true,
+      customStartEpochDay = endDay,
+      customEndEpochDay = startDay,
+      generatedEpochDay = epochDayFromDate(2026, 11, 19),
+    )
+
+    // Oct 15 and Nov 1 are inside [Oct 10..Nov 3]; Nov 5 groceries is excluded
+    assertEquals(2, report.transactions.size)
+    assertTrue(report.transactions.any { it.title == "October Internet Bill" })
+    assertTrue(report.transactions.any { it.title == "Monthly Salary" })
+    assertFalse(report.transactions.any { it.title.contains("Groceries") })
+
+    // Both Oct 2026 and Nov 2026 overlap the custom range
+    assertEquals(2, report.budgets.size)
+    assertEquals(
+      "BudgetWise_Report_2026-10-10_to_2026-11-03.csv",
+      FinancialReportExporter.suggestedFileName(report, ExportFormat.CSV),
+    )
+    assertEquals(
+      "BudgetWise_Report_2026-10-10_to_2026-11-03.pdf",
+      FinancialReportExporter.suggestedFileName(report, ExportFormat.PDF),
+    )
   }
 
   @Test
@@ -148,7 +194,7 @@ class FinancialReportExporterTest {
       selectedMonth = nov2026,
       allTransactions = sampleTransactions(),
       allBudgets = sampleBudgets(),
-      scope = ExportScope.SELECTED_MONTH,
+      scope = ExportScope.MONTH,
       includeTransactions = false,
       includeBudgets = true,
     )
@@ -181,7 +227,7 @@ class FinancialReportExporterTest {
       selectedMonth = nov2026,
       allTransactions = manyTransactions,
       allBudgets = sampleBudgets(),
-      scope = ExportScope.SELECTED_MONTH,
+      scope = ExportScope.MONTH,
       includeTransactions = true,
       includeBudgets = true,
       generatedEpochDay = epochDayFromDate(2026, 11, 19),
@@ -212,5 +258,47 @@ class FinancialReportExporterTest {
       assertEquals(842, h)
       assertEquals(idx + 1, num)
     }
+  }
+
+  @Test
+  fun `share chooser intent uses FileProvider URI, ClipData, and read URI permission flags`() {
+    val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+    val exportFile = File(exportDir, "BudgetWise_Report_2026-11.csv").apply {
+      writeText("\uFEFFBudgetWise Financial Report\n")
+    }
+
+    val chooser = buildShareExportChooserIntent(
+      context = context,
+      file = exportFile,
+      format = ExportFormat.CSV,
+      periodLabel = "November 2026",
+    )
+
+    assertEquals(Intent.ACTION_CHOOSER, chooser.action)
+    assertTrue(
+      "Chooser intent must carry FLAG_GRANT_READ_URI_PERMISSION",
+      (chooser.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
+    )
+
+    @Suppress("DEPRECATION")
+    val targetIntent = chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+    assertNotNull("Chooser must wrap an ACTION_SEND target intent", targetIntent)
+    assertEquals(Intent.ACTION_SEND, targetIntent!!.action)
+    assertEquals(ExportFormat.CSV.mimeType, targetIntent.type)
+    assertTrue(
+      "Target ACTION_SEND intent must carry FLAG_GRANT_READ_URI_PERMISSION",
+      (targetIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
+    )
+    assertNotNull("Target intent must attach ClipData for Android 10+ URI grants", targetIntent.clipData)
+
+    @Suppress("DEPRECATION")
+    val streamUri = targetIntent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+    assertNotNull(streamUri)
+    assertEquals("content", streamUri!!.scheme)
+    assertEquals("${context.packageName}.fileprovider", streamUri.authority)
+    assertEquals(streamUri, targetIntent.clipData!!.getItemAt(0).uri)
+
+    exportFile.delete()
   }
 }

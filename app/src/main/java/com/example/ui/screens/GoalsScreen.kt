@@ -1,10 +1,13 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -14,14 +17,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -303,7 +310,10 @@ fun GoalsScreen(
         }
       } else {
         item {
-          SectionHeader(title = "Your goals (${uiState.goalSummaries.size})")
+          SectionHeader(
+            title = "Your goals (${uiState.goalSummaries.size})",
+            icon = Icons.Rounded.Savings,
+          )
         }
         items(uiState.goalSummaries, key = { it.goalId }) { summary ->
           val rawGoal = uiState.rawGoals.firstOrNull { it.id == summary.goalId }
@@ -716,60 +726,142 @@ private fun GoalHistorySheet(
 ) {
   val financeColors = LocalFinanceColors.current
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  var expandedIds by remember(goal.goalId) { mutableStateOf(emptySet<Long>()) }
 
-  ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-    Column(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 20.dp)
-        .padding(bottom = 28.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text("${goal.name} · History", style = MaterialTheme.typography.headlineSmall)
-      if (contributions.isEmpty()) {
-        Text(
-          text = "No contributions or adjustments recorded for this goal yet.",
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      } else {
-        contributions.forEach { entry ->
-          Surface(
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
+  ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    sheetState = sheetState,
+    modifier = Modifier
+      .statusBarsPadding()
+      .testTag("goal_history_sheet"),
+  ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+      val maxSheetContentHeight = (maxHeight * 0.86f).coerceAtLeast(240.dp)
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(max = maxSheetContentHeight)
+          .navigationBarsPadding()
+          .padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.History,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+          )
+          Text(
+            text = "${goal.name} · History",
+            style = MaterialTheme.typography.headlineSmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+
+        if (contributions.isEmpty()) {
+          Text(
+            text = "No contributions or adjustments recorded for this goal yet.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 32.dp),
+          )
+        } else {
+          LazyColumn(
+            modifier = Modifier
+              .fillMaxWidth()
+              .weight(1f, fill = false)
+              .testTag("goal_history_list"),
+            contentPadding = PaddingValues(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f)) {
-                Text(
-                  text = entry.note.ifBlank { if (entry.isWithdrawal) "Withdrawal / correction" else "Contribution" },
-                  style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                  text = formatEpochDay(entry.dateEpochDay),
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            items(contributions, key = { it.id }) { entry ->
+              val isExpanded = entry.id in expandedIds
+              var isExpandable by remember(entry.id, entry.note) { mutableStateOf(false) }
+              val noteText = entry.note.ifBlank {
+                if (entry.isWithdrawal) "Withdrawal / correction" else "Contribution"
               }
               val isHidden = LocalIsBalanceHidden.current
-              Text(
-                text = if (isHidden) {
-                  FinanceCalculator.formatMaskedCurrency(currencyCode)
-                } else {
-                  FinanceCalculator.formatCentavos(
-                    centavos = entry.amountCentavos,
-                    currencyCode = currencyCode,
-                    showPlusSign = !entry.isWithdrawal,
-                    forceMinusSign = entry.isWithdrawal,
+
+              Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clip(MaterialTheme.shapes.small)
+                  .clickable {
+                    expandedIds = if (isExpanded) {
+                      expandedIds - entry.id
+                    } else {
+                      expandedIds + entry.id
+                    }
+                  }
+                  .animateContentSize()
+                  .testTag("goal_history_item_${entry.id}"),
+              ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                  horizontalArrangement = Arrangement.spacedBy(12.dp),
+                  verticalAlignment = Alignment.Top,
+                ) {
+                  Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                  ) {
+                    Text(
+                      text = noteText,
+                      style = MaterialTheme.typography.titleSmall,
+                      maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                      overflow = TextOverflow.Ellipsis,
+                      onTextLayout = { result ->
+                        if (!isExpanded && result.hasVisualOverflow) {
+                          isExpandable = true
+                        }
+                      },
+                    )
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                      Text(
+                        text = formatEpochDay(entry.dateEpochDay),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      )
+                      if (isExpandable || isExpanded) {
+                        Text(
+                          text = if (isExpanded) "Show less" else "Tap to expand",
+                          style = MaterialTheme.typography.labelSmall,
+                          color = MaterialTheme.colorScheme.primary,
+                        )
+                      }
+                    }
+                  }
+                  Text(
+                    text = if (isHidden) {
+                      FinanceCalculator.formatMaskedCurrency(currencyCode)
+                    } else {
+                      FinanceCalculator.formatCentavos(
+                        centavos = entry.amountCentavos,
+                        currencyCode = currencyCode,
+                        showPlusSign = !entry.isWithdrawal,
+                        forceMinusSign = entry.isWithdrawal,
+                      )
+                    },
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = if (entry.isWithdrawal) financeColors.expense else financeColors.income,
+                    maxLines = 1,
+                    softWrap = false,
                   )
-                },
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                color = if (entry.isWithdrawal) financeColors.expense else financeColors.income,
-              )
+                }
+              }
             }
           }
         }

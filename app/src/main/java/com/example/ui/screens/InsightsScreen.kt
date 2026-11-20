@@ -22,10 +22,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoGraph
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircleOutline
+import androidx.compose.material.icons.rounded.DonutLarge
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.ShowChart
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -289,11 +294,22 @@ fun InsightsScreen(
       }
 
       item {
-        Text(
-          text = "Monthly Breakdown",
-          style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.onBackground,
-        )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.CalendarMonth,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+          )
+          Text(
+            text = "Monthly Breakdown",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+          )
+        }
       }
 
       item {
@@ -437,7 +453,18 @@ fun InsightsScreen(
 
       // Deterministic Observations
       item {
-        Text("Key Observations", style = MaterialTheme.typography.titleMedium)
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.Lightbulb,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+          )
+          Text("Key Observations", style = MaterialTheme.typography.titleMedium)
+        }
       }
 
       items(uiState.insights) { insight ->
@@ -451,7 +478,12 @@ fun InsightsScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            Icon(Icons.Rounded.AutoGraph, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(
+              imageVector = Icons.Rounded.AutoGraph,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp),
+            )
             Text("6-Month Income vs Expenses", style = MaterialTheme.typography.titleMedium)
           }
           Spacer(modifier = Modifier.height(4.dp))
@@ -471,7 +503,21 @@ fun InsightsScreen(
       // Expense Distribution Donut Chart
       item {
         FintechCard(modifier = Modifier.fillMaxWidth()) {
-          Text("Expense Distribution · ${uiState.selectedMonth.shortLabel()}", style = MaterialTheme.typography.titleMedium)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.DonutLarge,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp),
+            )
+            Text(
+              text = "Expense Distribution · ${uiState.selectedMonth.monthNameOnly()}",
+              style = MaterialTheme.typography.titleMedium,
+            )
+          }
           Spacer(modifier = Modifier.height(4.dp))
           Text(
             text = "Tap any category row to highlight its share",
@@ -489,7 +535,21 @@ fun InsightsScreen(
       // Daily Spending Trend Line Chart
       item {
         FintechCard(modifier = Modifier.fillMaxWidth()) {
-          Text("Daily Spending Trend · ${uiState.selectedMonth.shortLabel()}", style = MaterialTheme.typography.titleMedium)
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.ShowChart,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp),
+            )
+            Text(
+              text = "Daily Spending Trend · ${uiState.selectedMonth.monthNameOnly()}",
+              style = MaterialTheme.typography.titleMedium,
+            )
+          }
           Spacer(modifier = Modifier.height(10.dp))
           SpendingTrendLineChart(
             points = uiState.dailySpendingSeries,
@@ -502,7 +562,18 @@ fun InsightsScreen(
       if (uiState.budgetSummaries.isNotEmpty()) {
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
-            Text("Budget Performance", style = MaterialTheme.typography.titleMedium)
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.AccountBalanceWallet,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+              )
+              Text("Budget Performance", style = MaterialTheme.typography.titleMedium)
+            }
             Spacer(modifier = Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
               uiState.budgetSummaries.forEach { summary ->

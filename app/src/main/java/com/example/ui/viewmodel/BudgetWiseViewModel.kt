@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,21 +12,28 @@ import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.ChatMessageEntity
 import com.example.data.local.entity.ChatSessionEntity
+import com.example.data.local.entity.FinancialAlertEntity
 import com.example.data.local.entity.SavingsContributionEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.repository.BudgetWiseRepository
+import com.example.domain.AlertDestination
+import com.example.domain.AlertThresholdDefaults
 import com.example.domain.BudgetSummary
 import com.example.domain.CategoryBreakdown
 import com.example.domain.CategoryVisualMatcher
 import com.example.domain.ChatRole
 import com.example.domain.ChatTitleGenerator
 import com.example.domain.DailySpendingPoint
+import com.example.domain.ExportFormat
 import com.example.domain.FinanceCalculator
+import com.example.domain.FinancialAlertEvaluator
 import com.example.domain.FinancialChatContextBuilder
 import com.example.domain.FinancialInsight
+import com.example.domain.FinancialReportData
+import com.example.domain.FinancialReportExporter
 import com.example.domain.GoalStatus
 import com.example.domain.MonthlyCashFlowPoint
 import com.example.domain.MonthlySpendingPoint
@@ -37,6 +45,9 @@ import com.example.domain.TransactionSortOrder
 import com.example.domain.TransactionType
 import com.example.domain.YearMonthKey
 import com.example.domain.currentEpochDay
+import com.example.notifications.BudgetWiseNotificationManager
+import com.example.notifications.DailyReminderScheduler
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -130,6 +141,8 @@ data class BudgetWiseUiState(
   val allTimeMonthlySpendingSeries: List<MonthlySpendingPoint> = emptyList(),
   val insights: List<FinancialInsight> = emptyList(),
   val categories: List<CategoryEntity> = emptyList(),
+  val financialAlerts: List<FinancialAlertEntity> = emptyList(),
+  val unreadAlertCount: Int = 0,
 )
 
 private data class CoreInputs(
@@ -145,6 +158,7 @@ private data class SecondaryInputs(
   val categories: List<CategoryEntity>,
   val activityFilter: ActivityFilterState,
   val homePeriodScope: HomePeriodScope,
+  val alerts: List<FinancialAlertEntity>,
 )
 
 /**
@@ -173,6 +187,15 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private val _isAppLocked = MutableStateFlow(false)
   val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
 
+  private val _isExportingReport = MutableStateFlow(false)
+  val isExportingReport: StateFlow<Boolean> = _isExportingReport.asStateFlow()
+
+  private val _pendingAlertDestination = MutableStateFlow<AlertDestination?>(null)
+  val pendingAlertDestination: StateFlow<AlertDestination?> = _pendingAlertDestination.asStateFlow()
+
+  private var pendingExportSnapshot: Pair<FinancialReportData, ExportFormat>? = null
+  private var suppressNextBackgroundLockOnce: Boolean = false
+
   private val activeChatSelectionFlow = MutableStateFlow<ActiveChatSelection>(ActiveChatSelection.AutoLatest)
   private val chatStreamingStateFlow = MutableStateFlow<ChatStreamingState>(ChatStreamingState.Idle)
   private var activeChatJob: Job? = null
@@ -180,12 +203,15 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private var backgroundedAtMillis: Long? = null
 
   init {
+    BudgetWiseNotificationManager.ensureNotificationChannels(application)
     viewModelScope.launch {
       val initialPrefs = preferencesRepository.userPreferences.first()
       if (initialPrefs.appLockEnabled && !initialPrefs.pinHashRecord.isNullOrBlank()) {
         _isAppLocked.value = true
       }
       repository.ensureInitialDataSeeded()
+      syncDailyReminderSchedule(initialPrefs)
+      evaluateActiveAlertsOnStartup(initialPrefs)
     }
   }
 
@@ -204,8 +230,9 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     repository.categories,
     activityFilterFlow,
     homePeriodScopeFlow,
-  ) { contributions, categories, filter, homeScope ->
-    SecondaryInputs(contributions, categories, filter, homeScope)
+    repository.financialAlerts,
+  ) { contributions, categories, filter, homeScope, alerts ->
+    SecondaryInputs(contributions, categories, filter, homeScope, alerts)
   }
 
   val uiState: StateFlow<BudgetWiseUiState> = combine(
@@ -279,6 +306,8 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       allTimeMonthlySpendingSeries = allTimeMonthlySpending,
       insights = insights,
       categories = secondary.categories,
+      financialAlerts = secondary.alerts,
+      unreadAlertCount = secondary.alerts.count { !it.isRead },
     )
   }.stateIn(
     scope = viewModelScope,
@@ -467,10 +496,18 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         isSampleData = false,
       )
       repository.saveTransaction(entity)
-      selectedMonthFlow.value = YearMonthKey.fromEpochDay(dateEpochDay)
+      val txMonth = YearMonthKey.fromEpochDay(dateEpochDay)
+      selectedMonthFlow.value = txMonth
       _snackbarMessages.tryEmit(
         if (existingId == 0L) "Transaction added" else "Transaction updated"
       )
+      if (type == TransactionType.EXPENSE) {
+        evaluateBudgetThresholdForCategory(
+          category = resolvedCategory,
+          yearMonth = txMonth,
+          dispatchSystemNotification = true,
+        )
+      }
     }
   }
 
@@ -478,6 +515,13 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     viewModelScope.launch {
       repository.deleteTransaction(transaction)
       _snackbarMessages.tryEmit("Transaction deleted")
+      if (transaction.type == TransactionType.EXPENSE) {
+        evaluateBudgetThresholdForCategory(
+          category = transaction.category,
+          yearMonth = YearMonthKey.fromEpochDay(transaction.dateEpochDay),
+          dispatchSystemNotification = false,
+        )
+      }
     }
   }
 
@@ -502,6 +546,11 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       _snackbarMessages.tryEmit(
         if (created) "Budget created for $category" else "Budget updated for $category"
       )
+      evaluateBudgetThresholdForCategory(
+        category = category,
+        yearMonth = yearMonth,
+        dispatchSystemNotification = true,
+      )
     }
   }
 
@@ -516,6 +565,9 @@ class BudgetWiseViewModel @JvmOverloads constructor(
           month = summary.yearMonth.month,
           isSampleData = summary.isSampleData,
         )
+      )
+      repository.clearAlertDedupePrefix(
+        FinancialAlertEvaluator.budgetDedupePrefix(summary.category, summary.yearMonth)
       )
       _snackbarMessages.tryEmit("Budget deleted")
     }
@@ -549,6 +601,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       )
       repository.saveGoal(entity)
       _snackbarMessages.tryEmit(if (existing == null) "Savings goal created" else "Savings goal updated")
+      evaluateUpcomingGoalDeadlines(dispatchSystemNotification = true)
     }
   }
 
@@ -567,6 +620,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     dateEpochDay: Long,
   ) {
     viewModelScope.launch {
+      val previousGoal = repository.savingsGoals.first().firstOrNull { it.id == goalId }
       repository.recordGoalContribution(
         goalId = goalId,
         amountCentavos = amountCentavos,
@@ -577,6 +631,28 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       _snackbarMessages.tryEmit(
         if (isWithdrawal) "Savings adjustment recorded" else "Contribution added to goal"
       )
+      if (!isWithdrawal && previousGoal != null) {
+        val prefs = preferencesRepository.userPreferences.first()
+        if (prefs.goalAlertsEnabled) {
+          val updatedGoal = repository.savingsGoals.first().firstOrNull { it.id == goalId }
+          if (updatedGoal != null) {
+            val milestoneAlert = FinancialAlertEvaluator.evaluateGoalMilestoneAlert(
+              goalId = updatedGoal.id,
+              goalName = updatedGoal.name,
+              previousSavedCentavos = previousGoal.currentSavedCentavos,
+              newSavedCentavos = updatedGoal.currentSavedCentavos,
+              targetCentavos = updatedGoal.targetCentavos,
+              currencyCode = prefs.preferredCurrency,
+            )
+            if (milestoneAlert != null) {
+              val persisted = repository.insertAlertIfNew(milestoneAlert)
+              if (persisted != null) {
+                BudgetWiseNotificationManager.postSystemNotification(getApplication(), persisted)
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -691,8 +767,124 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     }
   }
 
+  /**
+   * Suppresses the next background-to-foreground App Lock check when intentionally handing off
+   * control to Android's system file picker or share sheet.
+   */
+  fun suppressNextBackgroundLock() {
+    suppressNextBackgroundLockOnce = true
+  }
+
+  fun preparePendingExport(data: FinancialReportData, format: ExportFormat) {
+    pendingExportSnapshot = data to format
+  }
+
+  fun clearPendingExport() {
+    pendingExportSnapshot = null
+  }
+
+  fun savePendingExportToUri(uri: Uri, onCompleted: () -> Unit = {}) {
+    val snapshot = pendingExportSnapshot
+    pendingExportSnapshot = null
+    if (snapshot == null) {
+      _snackbarMessages.tryEmit("Export expired. Please try again.")
+      return
+    }
+    val (data, format) = snapshot
+    val appContext = getApplication<Application>()
+    val fileName = FinancialReportExporter.suggestedFileName(data, format)
+    _isExportingReport.value = true
+
+    viewModelScope.launch {
+      val result = runCatching {
+        withContext(Dispatchers.IO) {
+          val bytes = FinancialReportExporter.buildReportBytes(data, format)
+          FinancialReportExporter.writeBytesToDocumentUri(appContext, uri, bytes)
+        }
+      }
+      _isExportingReport.value = false
+      result.onSuccess {
+        _snackbarMessages.tryEmit("Saved $fileName")
+        onCompleted()
+      }.onFailure { err ->
+        Log.e("BudgetWiseExport", "Failed to save $fileName to SAF URI", err)
+        _snackbarMessages.tryEmit("Export failed: ${err.localizedMessage ?: "Unable to write file"}")
+      }
+    }
+  }
+
+  fun saveExportToDownloadsFallback(
+    data: FinancialReportData,
+    format: ExportFormat,
+    onCompleted: () -> Unit = {},
+  ) {
+    val appContext = getApplication<Application>()
+    val fileName = FinancialReportExporter.suggestedFileName(data, format)
+    _isExportingReport.value = true
+
+    viewModelScope.launch {
+      val result = runCatching {
+        withContext(Dispatchers.IO) {
+          val bytes = FinancialReportExporter.buildReportBytes(data, format)
+          FinancialReportExporter.saveBytesToDownloadsFallback(
+            context = appContext,
+            fileName = fileName,
+            mimeType = format.mimeType,
+            bytes = bytes,
+          )
+        }
+      }
+      _isExportingReport.value = false
+      result.onSuccess {
+        _snackbarMessages.tryEmit("Saved to Downloads/BudgetWise/$fileName")
+        onCompleted()
+      }.onFailure { err ->
+        Log.e("BudgetWiseExport", "Failed to save $fileName to Downloads", err)
+        _snackbarMessages.tryEmit("Export failed: ${err.localizedMessage ?: "Unable to save file"}")
+      }
+    }
+  }
+
+  fun prepareShareExportFile(
+    data: FinancialReportData,
+    format: ExportFormat,
+    onReady: (file: File, format: ExportFormat, periodLabel: String) -> Unit,
+  ) {
+    val appContext = getApplication<Application>()
+    val fileName = FinancialReportExporter.suggestedFileName(data, format)
+    _isExportingReport.value = true
+
+    viewModelScope.launch {
+      val result = runCatching {
+        withContext(Dispatchers.IO) {
+          val bytes = FinancialReportExporter.buildReportBytes(data, format)
+          val exportsDir = File(appContext.cacheDir, "exports").apply { mkdirs() }
+          exportsDir.listFiles()?.forEach { oldFile ->
+            if (oldFile.name != fileName) {
+              oldFile.delete()
+            }
+          }
+          val outFile = File(exportsDir, fileName)
+          outFile.writeBytes(bytes)
+          outFile
+        }
+      }
+      _isExportingReport.value = false
+      result.onSuccess { outFile ->
+        onReady(outFile, format, data.periodLabel)
+      }.onFailure { err ->
+        Log.e("BudgetWiseExport", "Failed to generate shareable report $fileName", err)
+        _snackbarMessages.tryEmit("Share failed: ${err.localizedMessage ?: "Unable to prepare file"}")
+      }
+    }
+  }
+
   // App Lock & PIN Security
   fun onAppMovedToBackground() {
+    if (suppressNextBackgroundLockOnce) {
+      backgroundedAtMillis = null
+      return
+    }
     val prefs = uiState.value.preferences
     if (prefs.appLockEnabled && !prefs.pinHashRecord.isNullOrBlank()) {
       backgroundedAtMillis = System.currentTimeMillis()
@@ -700,6 +892,11 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   }
 
   fun onAppReturnedToForeground() {
+    if (suppressNextBackgroundLockOnce) {
+      suppressNextBackgroundLockOnce = false
+      backgroundedAtMillis = null
+      return
+    }
     val pausedAt = backgroundedAtMillis ?: return
     backgroundedAtMillis = null
     val prefs = uiState.value.preferences
@@ -1102,6 +1299,224 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       val latestSession = repository.getChatSession(sessionId) ?: return@launch
       if (!latestSession.isTitleManuallySet && candidateTitle != latestSession.title) {
         repository.renameChatSession(sessionId, candidateTitle, isManual = false)
+      }
+    }
+  }
+
+  // Financial Alerts & Notification Preferences
+  fun setBudgetAlertsEnabled(enabled: Boolean) {
+    viewModelScope.launch {
+      preferencesRepository.updateBudgetAlertsEnabled(enabled)
+      if (enabled) {
+        val prefs = preferencesRepository.userPreferences.first()
+        evaluateAllCurrentMonthBudgets(prefs, dispatchSystemNotification = false)
+      }
+      _snackbarMessages.tryEmit(
+        if (enabled) "Budget threshold alerts enabled" else "Budget threshold alerts paused"
+      )
+    }
+  }
+
+  fun setGoalAlertsEnabled(enabled: Boolean) {
+    viewModelScope.launch {
+      preferencesRepository.updateGoalAlertsEnabled(enabled)
+      val prefs = preferencesRepository.userPreferences.first()
+      syncDailyReminderSchedule(prefs)
+      if (enabled) {
+        evaluateUpcomingGoalDeadlines(dispatchSystemNotification = false)
+      }
+      _snackbarMessages.tryEmit(
+        if (enabled) "Savings goal alerts enabled" else "Savings goal alerts paused"
+      )
+    }
+  }
+
+  fun setDailyReminderEnabled(enabled: Boolean) {
+    viewModelScope.launch {
+      preferencesRepository.updateDailyReminderEnabled(enabled)
+      val prefs = preferencesRepository.userPreferences.first()
+      syncDailyReminderSchedule(prefs)
+      val timeLabel = AlertThresholdDefaults.formatReminderTime(
+        prefs.dailyReminderHour,
+        prefs.dailyReminderMinute,
+      )
+      _snackbarMessages.tryEmit(
+        if (enabled) "Daily reminder scheduled for $timeLabel" else "Daily reminder turned off"
+      )
+    }
+  }
+
+  fun setBudgetWarningThreshold(percent: Int) {
+    viewModelScope.launch {
+      val sanitized = AlertThresholdDefaults.sanitizeThreshold(percent)
+      preferencesRepository.updateBudgetWarningThreshold(sanitized)
+      val prefs = preferencesRepository.userPreferences.first()
+      if (prefs.budgetAlertsEnabled) {
+        evaluateAllCurrentMonthBudgets(prefs, dispatchSystemNotification = false)
+      }
+      _snackbarMessages.tryEmit("Budget warning threshold set to $sanitized%")
+    }
+  }
+
+  fun setDailyReminderTime(hour24: Int, minute: Int) {
+    viewModelScope.launch {
+      preferencesRepository.updateDailyReminderTime(hour24, minute)
+      val prefs = preferencesRepository.userPreferences.first()
+      syncDailyReminderSchedule(prefs)
+      val formatted = AlertThresholdDefaults.formatReminderTime(hour24, minute)
+      _snackbarMessages.tryEmit("Daily reminder time set to $formatted")
+    }
+  }
+
+  fun markAlertAsRead(alertId: Long) {
+    viewModelScope.launch {
+      repository.markAlertAsRead(alertId)
+    }
+  }
+
+  fun markAllAlertsAsRead() {
+    viewModelScope.launch {
+      repository.markAllAlertsAsRead()
+    }
+  }
+
+  fun deleteAlert(alertId: Long) {
+    viewModelScope.launch {
+      repository.deleteAlert(alertId)
+    }
+  }
+
+  fun clearAllAlerts() {
+    viewModelScope.launch {
+      repository.clearAllAlerts()
+      _snackbarMessages.tryEmit("Notifications cleared")
+    }
+  }
+
+  fun handleNotificationDeepLink(destinationName: String?, alertId: Long = -1L) {
+    if (alertId > 0L) {
+      markAlertAsRead(alertId)
+    }
+    val destination = destinationName?.let { raw ->
+      runCatching { AlertDestination.valueOf(raw) }.getOrNull()
+    } ?: return
+    _pendingAlertDestination.value = destination
+  }
+
+  fun consumePendingAlertDestination() {
+    _pendingAlertDestination.value = null
+  }
+
+  private fun syncDailyReminderSchedule(prefs: UserPreferences) {
+    DailyReminderScheduler.syncSchedule(
+      context = getApplication(),
+      dailyReminderEnabled = prefs.dailyReminderEnabled,
+      goalAlertsEnabled = prefs.goalAlertsEnabled,
+      hour24 = prefs.dailyReminderHour,
+      minute = prefs.dailyReminderMinute,
+    )
+  }
+
+  private suspend fun evaluateActiveAlertsOnStartup(prefs: UserPreferences) {
+    if (prefs.budgetAlertsEnabled) {
+      evaluateAllCurrentMonthBudgets(prefs, dispatchSystemNotification = false)
+    }
+    if (prefs.goalAlertsEnabled) {
+      evaluateUpcomingGoalDeadlines(dispatchSystemNotification = false)
+    }
+  }
+
+  private suspend fun evaluateAllCurrentMonthBudgets(
+    prefs: UserPreferences,
+    dispatchSystemNotification: Boolean,
+  ) {
+    val currentMonth = YearMonthKey.current()
+    val budgets = repository.budgets.first()
+      .filter { it.year == currentMonth.year && it.month == currentMonth.month }
+    if (budgets.isEmpty()) return
+    val transactions = repository.transactions.first()
+    val monthExpenses = FinanceCalculator.filterTransactionsByMonth(transactions, currentMonth)
+      .filter { it.type == TransactionType.EXPENSE }
+
+    budgets.forEach { budget ->
+      val spentCentavos = monthExpenses
+        .filter { it.category.equals(budget.category, ignoreCase = true) }
+        .sumOf { it.amountCentavos }
+      val candidate = FinancialAlertEvaluator.evaluateBudgetAlert(
+        category = budget.category,
+        yearMonth = currentMonth,
+        spentCentavos = spentCentavos,
+        limitCentavos = budget.limitCentavos,
+        warningThresholdPercent = prefs.budgetWarningThresholdPercent,
+        currencyCode = prefs.preferredCurrency,
+      )
+      if (candidate != null) {
+        val persisted = repository.insertAlertIfNew(candidate)
+        if (persisted != null && dispatchSystemNotification) {
+          BudgetWiseNotificationManager.postSystemNotification(getApplication(), persisted)
+        }
+      }
+    }
+  }
+
+  private suspend fun evaluateBudgetThresholdForCategory(
+    category: String,
+    yearMonth: YearMonthKey,
+    dispatchSystemNotification: Boolean,
+  ) {
+    val prefs = preferencesRepository.userPreferences.first()
+    if (!prefs.budgetAlertsEnabled) return
+
+    val budget = repository.budgets.first().firstOrNull {
+      it.year == yearMonth.year &&
+        it.month == yearMonth.month &&
+        it.category.equals(category, ignoreCase = true)
+    } ?: return
+
+    val monthExpenses = FinanceCalculator.filterTransactionsByMonth(
+      repository.transactions.first(),
+      yearMonth,
+    ).filter {
+      it.type == TransactionType.EXPENSE && it.category.equals(budget.category, ignoreCase = true)
+    }
+    val spentCentavos = monthExpenses.sumOf { it.amountCentavos }
+
+    val candidate = FinancialAlertEvaluator.evaluateBudgetAlert(
+      category = budget.category,
+      yearMonth = yearMonth,
+      spentCentavos = spentCentavos,
+      limitCentavos = budget.limitCentavos,
+      warningThresholdPercent = prefs.budgetWarningThresholdPercent,
+      currencyCode = prefs.preferredCurrency,
+    )
+
+    if (candidate == null) {
+      // Spending dropped below warning threshold (e.g., raised budget or deleted/edited expense)
+      repository.clearAlertDedupePrefix(
+        FinancialAlertEvaluator.budgetDedupePrefix(budget.category, yearMonth)
+      )
+      return
+    }
+
+    val persisted = repository.insertAlertIfNew(candidate)
+    if (persisted != null && dispatchSystemNotification) {
+      BudgetWiseNotificationManager.postSystemNotification(getApplication(), persisted)
+    }
+  }
+
+  private suspend fun evaluateUpcomingGoalDeadlines(dispatchSystemNotification: Boolean) {
+    val prefs = preferencesRepository.userPreferences.first()
+    if (!prefs.goalAlertsEnabled) return
+    val goals = repository.savingsGoals.first()
+    val alerts = FinancialAlertEvaluator.evaluateGoalDeadlineAlerts(
+      goals = goals,
+      todayEpochDay = currentEpochDay(),
+      currencyCode = prefs.preferredCurrency,
+    )
+    alerts.forEach { candidate ->
+      val persisted = repository.insertAlertIfNew(candidate)
+      if (persisted != null && dispatchSystemNotification) {
+        BudgetWiseNotificationManager.postSystemNotification(getApplication(), persisted)
       }
     }
   }

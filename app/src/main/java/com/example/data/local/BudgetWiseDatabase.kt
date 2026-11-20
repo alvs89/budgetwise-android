@@ -11,12 +11,14 @@ import com.example.data.local.dao.BudgetDao
 import com.example.data.local.dao.CategoryDao
 import com.example.data.local.dao.ChatMessageDao
 import com.example.data.local.dao.ChatSessionDao
+import com.example.data.local.dao.FinancialAlertDao
 import com.example.data.local.dao.SavingsGoalDao
 import com.example.data.local.dao.TransactionDao
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.ChatMessageEntity
 import com.example.data.local.entity.ChatSessionEntity
+import com.example.data.local.entity.FinancialAlertEntity
 import com.example.data.local.entity.SavingsContributionEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
@@ -34,8 +36,9 @@ import com.example.data.local.entity.TransactionEntity
     CategoryEntity::class,
     ChatSessionEntity::class,
     ChatMessageEntity::class,
+    FinancialAlertEntity::class,
   ],
-  version = 3,
+  version = 4,
   exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -46,6 +49,7 @@ abstract class BudgetWiseDatabase : RoomDatabase() {
   abstract fun categoryDao(): CategoryDao
   abstract fun chatSessionDao(): ChatSessionDao
   abstract fun chatMessageDao(): ChatMessageDao
+  abstract fun financialAlertDao(): FinancialAlertDao
 
   companion object {
     @Volatile
@@ -158,6 +162,33 @@ abstract class BudgetWiseDatabase : RoomDatabase() {
       }
     }
 
+    /** Adds persistent `financial_alerts` table for the Notification Center while preserving all v3 records. */
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+      override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+          """
+          CREATE TABLE IF NOT EXISTS `financial_alerts` (
+            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            `dedupeKey` TEXT NOT NULL,
+            `type` TEXT NOT NULL,
+            `severity` TEXT NOT NULL,
+            `title` TEXT NOT NULL,
+            `message` TEXT NOT NULL,
+            `targetDestination` TEXT NOT NULL,
+            `isRead` INTEGER NOT NULL,
+            `createdAtMillis` INTEGER NOT NULL
+          )
+          """.trimIndent()
+        )
+        db.execSQL(
+          "CREATE UNIQUE INDEX IF NOT EXISTS `index_financial_alerts_dedupeKey` ON `financial_alerts` (`dedupeKey`)"
+        )
+        db.execSQL(
+          "CREATE INDEX IF NOT EXISTS `index_financial_alerts_createdAtMillis` ON `financial_alerts` (`createdAtMillis`)"
+        )
+      }
+    }
+
     fun getInstance(context: Context): BudgetWiseDatabase =
       INSTANCE ?: synchronized(this) {
         INSTANCE ?: Room.databaseBuilder(
@@ -165,7 +196,7 @@ abstract class BudgetWiseDatabase : RoomDatabase() {
           BudgetWiseDatabase::class.java,
           "budgetwise_db",
         )
-          .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+          .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
           .build()
           .also { INSTANCE = it }
       }

@@ -1,5 +1,13 @@
 package com.example.ui
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -62,11 +70,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -76,11 +86,15 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.R
 import com.example.data.local.entity.TransactionEntity
+import com.example.domain.AlertDestination
+import com.example.domain.ExportFormat
+import com.example.domain.FinancialReportExporter
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.ExportReportDialog
 import com.example.ui.components.FinancialChatSheet
 import com.example.ui.components.LaunchSplashOverlay
 import com.example.ui.components.LocalIsBalanceHidden
+import com.example.ui.components.NotificationCenterSheet
 import com.example.ui.components.PinLockOverlay
 import com.example.ui.components.TransactionEditorSheet
 import com.example.ui.screens.ActivityScreen
@@ -93,6 +107,7 @@ import com.example.ui.theme.BudgetWiseTheme
 import com.example.ui.viewmodel.BudgetWiseViewModel
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
+import java.io.File
 
 @Serializable object HomeRoute
 @Serializable object ActivityRoute
@@ -119,9 +134,41 @@ private val TopLevelDestinations = listOf(
 
 @Composable
 fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
+  val context = LocalContext.current
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val isAppLocked by viewModel.isAppLocked.collectAsStateWithLifecycle()
+  val isExportingReport by viewModel.isExportingReport.collectAsStateWithLifecycle()
+  val pendingAlertDestination by viewModel.pendingAlertDestination.collectAsStateWithLifecycle()
   val chatUiState by viewModel.chatUiState.collectAsStateWithLifecycle()
+  var showExportDialog by rememberSaveable { mutableStateOf(false) }
+  var showNotificationsSheet by rememberSaveable { mutableStateOf(false) }
+
+  // Register SAF CreateDocument launchers unconditionally at the root composable so they
+  // are never disposed while the system file picker is open.
+  val csvSaveLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.CreateDocument(ExportFormat.CSV.mimeType),
+  ) { uri ->
+    if (uri != null) {
+      viewModel.savePendingExportToUri(uri) {
+        showExportDialog = false
+      }
+    } else {
+      viewModel.clearPendingExport()
+    }
+  }
+
+  val pdfSaveLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.CreateDocument(ExportFormat.PDF.mimeType),
+  ) { uri ->
+    if (uri != null) {
+      viewModel.savePendingExportToUri(uri) {
+        showExportDialog = false
+      }
+    } else {
+      viewModel.clearPendingExport()
+    }
+  }
+
   var activeToastMessage by remember { mutableStateOf<String?>(null) }
   var isToastVisible by remember { mutableStateOf(false) }
   var toastSequence by remember { mutableIntStateOf(0) }
@@ -174,12 +221,48 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
     var editingTransaction by remember { mutableStateOf<TransactionEntity?>(null) }
     var pendingDeleteFromSheet by remember { mutableStateOf<TransactionEntity?>(null) }
     var showChatSheet by rememberSaveable { mutableStateOf(false) }
-    var showExportDialog by remember { mutableStateOf(false) }
 
     if (showExportDialog && !isAppLocked) {
       ExportReportDialog(
         uiState = uiState,
-        onExportFeedback = viewModel::notifyUser,
+        isExporting = isExportingReport,
+        onRequestSave = { reportData, format ->
+          val fileName = FinancialReportExporter.suggestedFileName(reportData, format)
+          viewModel.preparePendingExport(reportData, format)
+          viewModel.suppressNextBackgroundLock()
+          try {
+            when (format) {
+              ExportFormat.CSV -> csvSaveLauncher.launch(fileName)
+              ExportFormat.PDF -> pdfSaveLauncher.launch(fileName)
+            }
+          } catch (_: ActivityNotFoundException) {
+            viewModel.clearPendingExport()
+            viewModel.saveExportToDownloadsFallback(reportData, format) {
+              showExportDialog = false
+            }
+          } catch (_: Exception) {
+            viewModel.clearPendingExport()
+            viewModel.saveExportToDownloadsFallback(reportData, format) {
+              showExportDialog = false
+            }
+          }
+        },
+        onRequestShare = { reportData, format ->
+          viewModel.prepareShareExportFile(reportData, format) { outFile, fmt, periodLabel ->
+            viewModel.suppressNextBackgroundLock()
+            val error = launchShareSheet(
+              context = context,
+              file = outFile,
+              format = fmt,
+              periodLabel = periodLabel,
+            )
+            if (error == null) {
+              showExportDialog = false
+            } else {
+              viewModel.notifyUser(error)
+            }
+          }
+        },
         onDismiss = { showExportDialog = false },
       )
     }
@@ -255,6 +338,44 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
         launchSingleTop = true
         restoreState = true
       }
+    }
+
+    fun navigateToAlertDestination(destination: AlertDestination) {
+      when (destination) {
+        AlertDestination.BUDGETS -> navigateTopLevel(BudgetsRoute)
+        AlertDestination.GOALS -> navigateTopLevel(GoalsRoute)
+        AlertDestination.ACTIVITY -> navigateTopLevel(ActivityRoute)
+        AlertDestination.ADD_TRANSACTION -> {
+          editingTransaction = null
+          showTransactionSheet = true
+        }
+      }
+    }
+
+    LaunchedEffect(pendingAlertDestination, uiState.isLoading, isAppLocked) {
+      val dest = pendingAlertDestination
+      if (dest != null && !uiState.isLoading && !isAppLocked && uiState.preferences.onboardingCompleted) {
+        navigateToAlertDestination(dest)
+        viewModel.consumePendingAlertDestination()
+      }
+    }
+
+    if (showNotificationsSheet && !isAppLocked) {
+      NotificationCenterSheet(
+        alerts = uiState.financialAlerts,
+        unreadCount = uiState.unreadAlertCount,
+        onAlertClick = { alert ->
+          viewModel.markAlertAsRead(alert.id)
+          showNotificationsSheet = false
+          navigateToAlertDestination(alert.targetDestination)
+        },
+        onMarkAlertRead = viewModel::markAlertAsRead,
+        onDismissAlert = viewModel::deleteAlert,
+        onMarkAllRead = viewModel::markAllAlertsAsRead,
+        onClearAll = viewModel::clearAllAlerts,
+        onOpenSettings = { navController.navigate(SettingsRoute) },
+        onDismiss = { showNotificationsSheet = false },
+      )
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -369,6 +490,7 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                 onNextMonth = viewModel::selectNextMonth,
                 onHomePeriodScopeChange = viewModel::setHomePeriodScope,
                 onToggleBalanceHidden = viewModel::toggleBalanceHidden,
+                onOpenNotifications = { showNotificationsSheet = true },
                 onOpenSettings = { navController.navigate(SettingsRoute) },
                 onNavigateToActivity = { navigateTopLevel(ActivityRoute) },
                 onNavigateToBudgets = { navigateTopLevel(BudgetsRoute) },
@@ -443,6 +565,11 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                 onUpdateCurrency = viewModel::updatePreferredCurrency,
                 onUpdateThemeMode = viewModel::updateThemeMode,
                 onUpdateBalanceHidden = viewModel::setBalanceHidden,
+                onToggleBudgetAlerts = viewModel::setBudgetAlertsEnabled,
+                onToggleGoalAlerts = viewModel::setGoalAlertsEnabled,
+                onToggleDailyReminder = viewModel::setDailyReminderEnabled,
+                onUpdateBudgetWarningThreshold = viewModel::setBudgetWarningThreshold,
+                onUpdateDailyReminderTime = viewModel::setDailyReminderTime,
                 onVerifyCurrentPin = viewModel::verifyPin,
                 onEnableAppLockWithPin = viewModel::enableAppLockWithPin,
                 onChangeAppPin = viewModel::updateAppPin,
@@ -549,4 +676,54 @@ private fun TopFloatingToastBanner(
       }
     }
   }
+}
+
+internal fun buildShareExportChooserIntent(
+  context: Context,
+  file: File,
+  format: ExportFormat,
+  periodLabel: String,
+): Intent {
+  val authority = "${context.packageName}.fileprovider"
+  val contentUri = FileProvider.getUriForFile(context, authority, file)
+  val sendIntent = Intent(Intent.ACTION_SEND).apply {
+    type = format.mimeType
+    putExtra(Intent.EXTRA_STREAM, contentUri)
+    putExtra(Intent.EXTRA_SUBJECT, "BudgetWise Financial Report ($periodLabel)")
+    putExtra(Intent.EXTRA_TITLE, file.name)
+    clipData = ClipData.newUri(context.contentResolver, file.name, contentUri)
+    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+  }
+  return Intent.createChooser(sendIntent, "Share ${format.label} Report").apply {
+    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+  }
+}
+
+private fun launchShareSheet(
+  context: Context,
+  file: File,
+  format: ExportFormat,
+  periodLabel: String,
+): String? {
+  return try {
+    val chooser = buildShareExportChooserIntent(context, file, format, periodLabel)
+    val hostActivity = context.findActivity()
+    if (hostActivity != null) {
+      hostActivity.startActivity(chooser)
+    } else {
+      chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      context.startActivity(chooser)
+    }
+    null
+  } catch (_: ActivityNotFoundException) {
+    "No app available to share ${format.label} files"
+  } catch (err: Exception) {
+    "Share failed: ${err.localizedMessage ?: "Unable to share file"}"
+  }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+  is Activity -> this
+  is ContextWrapper -> baseContext.findActivity()
+  else -> null
 }

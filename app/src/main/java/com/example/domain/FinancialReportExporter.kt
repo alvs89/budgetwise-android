@@ -1,13 +1,20 @@
 package com.example.domain
 
+import android.content.ContentValues
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.TransactionEntity
+import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -31,13 +38,17 @@ enum class ExportFormat(
 }
 
 enum class ExportScope(val label: String) {
-  SELECTED_MONTH("Selected Month"),
+  MONTH("Month"),
+  CUSTOM_RANGE("Custom"),
   ALL_TIME("All Time"),
 }
 
 data class ExportRequest(
   val format: ExportFormat = ExportFormat.CSV,
-  val scope: ExportScope = ExportScope.SELECTED_MONTH,
+  val scope: ExportScope = ExportScope.MONTH,
+  val targetMonth: YearMonthKey = YearMonthKey.current(),
+  val customStartEpochDay: Long = currentEpochDay() - 30L,
+  val customEndEpochDay: Long = currentEpochDay(),
   val includeTransactions: Boolean = true,
   val includeBudgets: Boolean = true,
 )
@@ -79,7 +90,8 @@ object FinancialReportExporter {
   private const val FOOTER_RESERVED_Y = PAGE_HEIGHT - 44f
 
   /**
-   * Builds a normalized [FinancialReportData] snapshot for the selected scope and content options.
+   * Builds a normalized [FinancialReportData] snapshot for the selected scope, date range,
+   * and content options.
    */
   fun buildReportData(
     ownerName: String,
@@ -90,10 +102,18 @@ object FinancialReportExporter {
     scope: ExportScope,
     includeTransactions: Boolean,
     includeBudgets: Boolean,
+    customStartEpochDay: Long? = null,
+    customEndEpochDay: Long? = null,
     generatedEpochDay: Long = currentEpochDay(),
   ): FinancialReportData {
+    val rawStart = customStartEpochDay ?: epochDayFromDate(selectedMonth.year, selectedMonth.month, 1)
+    val rawEnd = customEndEpochDay ?: generatedEpochDay
+    val rangeStart = minOf(rawStart, rawEnd)
+    val rangeEnd = maxOf(rawStart, rawEnd)
+
     val scopedTransactions = when (scope) {
-      ExportScope.SELECTED_MONTH -> FinanceCalculator.filterTransactionsByMonth(allTransactions, selectedMonth)
+      ExportScope.MONTH -> FinanceCalculator.filterTransactionsByMonth(allTransactions, selectedMonth)
+      ExportScope.CUSTOM_RANGE -> allTransactions.filter { it.dateEpochDay in rangeStart..rangeEnd }
       ExportScope.ALL_TIME -> allTransactions
     }.sortedWith(
       compareByDescending<TransactionEntity> { it.dateEpochDay }
@@ -101,11 +121,32 @@ object FinancialReportExporter {
     )
 
     val scopedBudgets = when (scope) {
-      ExportScope.SELECTED_MONTH -> FinanceCalculator.buildBudgetSummaries(
+      ExportScope.MONTH -> FinanceCalculator.buildBudgetSummaries(
         budgets = allBudgets,
         transactions = allTransactions,
         yearMonth = selectedMonth,
       )
+      ExportScope.CUSTOM_RANGE -> {
+        val startYm = YearMonthKey.fromEpochDay(rangeStart)
+        val endYm = YearMonthKey.fromEpochDay(rangeEnd)
+        val startOrd = startYm.year * 12 + startYm.month
+        val endOrd = endYm.year * 12 + endYm.month
+        val matchingMonths = allBudgets
+          .map { YearMonthKey(it.year, it.month) }
+          .distinct()
+          .filter { ym ->
+            val ord = ym.year * 12 + ym.month
+            ord in startOrd..endOrd
+          }
+          .sortedWith(compareByDescending<YearMonthKey> { it.year }.thenByDescending { it.month })
+        matchingMonths.flatMap { ym ->
+          FinanceCalculator.buildBudgetSummaries(
+            budgets = allBudgets,
+            transactions = allTransactions,
+            yearMonth = ym,
+          )
+        }
+      }
       ExportScope.ALL_TIME -> {
         val distinctMonths = allBudgets
           .map { YearMonthKey(it.year, it.month) }
@@ -122,22 +163,30 @@ object FinancialReportExporter {
     }
 
     val totalIncome = when (scope) {
-      ExportScope.SELECTED_MONTH -> FinanceCalculator.calculateTotalIncome(allTransactions, selectedMonth)
+      ExportScope.MONTH -> FinanceCalculator.calculateTotalIncome(allTransactions, selectedMonth)
+      ExportScope.CUSTOM_RANGE -> FinanceCalculator.centavosToBigDecimal(
+        scopedTransactions.asSequence().filter { it.type == TransactionType.INCOME }.sumOf { it.amountCentavos },
+      )
       ExportScope.ALL_TIME -> FinanceCalculator.calculateAllTimeTotalIncome(allTransactions)
     }
     val totalExpenses = when (scope) {
-      ExportScope.SELECTED_MONTH -> FinanceCalculator.calculateTotalExpenses(allTransactions, selectedMonth)
+      ExportScope.MONTH -> FinanceCalculator.calculateTotalExpenses(allTransactions, selectedMonth)
+      ExportScope.CUSTOM_RANGE -> FinanceCalculator.centavosToBigDecimal(
+        scopedTransactions.asSequence().filter { it.type == TransactionType.EXPENSE }.sumOf { it.amountCentavos },
+      )
       ExportScope.ALL_TIME -> FinanceCalculator.calculateAllTimeTotalExpenses(allTransactions)
     }
     val netCashFlow = FinanceCalculator.calculateNetCashFlow(totalIncome, totalExpenses)
     val savingsRate = FinanceCalculator.calculateSavingsRatePercent(totalIncome, totalExpenses)
 
     val periodLabel = when (scope) {
-      ExportScope.SELECTED_MONTH -> selectedMonth.displayLabel()
+      ExportScope.MONTH -> selectedMonth.displayLabel()
+      ExportScope.CUSTOM_RANGE -> "${formatEpochDay(rangeStart, "MMM d, yyyy")} – ${formatEpochDay(rangeEnd, "MMM d, yyyy")}"
       ExportScope.ALL_TIME -> "All Time"
     }
     val periodSlug = when (scope) {
-      ExportScope.SELECTED_MONTH -> String.format(Locale.US, "%04d-%02d", selectedMonth.year, selectedMonth.month)
+      ExportScope.MONTH -> String.format(Locale.US, "%04d-%02d", selectedMonth.year, selectedMonth.month)
+      ExportScope.CUSTOM_RANGE -> "${formatEpochDay(rangeStart, "yyyy-MM-dd")}_to_${formatEpochDay(rangeEnd, "yyyy-MM-dd")}"
       ExportScope.ALL_TIME -> "AllTime"
     }
 
@@ -284,11 +333,33 @@ object FinancialReportExporter {
   }
 
   /**
+   * Builds UTF-8 bytes for [data] in CSV format.
+   */
+  fun buildCsvBytes(data: FinancialReportData): ByteArray =
+    buildCsvReport(data).toByteArray(Charsets.UTF_8)
+
+  /**
    * Writes [data] as a UTF-8 CSV stream to [outputStream].
    */
   fun writeCsvReport(data: FinancialReportData, outputStream: OutputStream) {
-    outputStream.write(buildCsvReport(data).toByteArray(Charsets.UTF_8))
+    outputStream.write(buildCsvBytes(data))
     outputStream.flush()
+  }
+
+  /**
+   * Renders [data] into a self-contained PDF byte array in memory first so writing to
+   * SAF `ContentResolver` streams or OEM `DocumentsProvider`s never encounters JNI stream errors.
+   */
+  fun buildPdfBytes(data: FinancialReportData): ByteArray {
+    val buffer = ByteArrayOutputStream(16_384)
+    val pdf = PdfDocument()
+    try {
+      renderPdfReport(data, AndroidPdfDocumentSink(pdf))
+      pdf.writeTo(buffer)
+    } finally {
+      pdf.close()
+    }
+    return buffer.toByteArray()
   }
 
   /**
@@ -296,13 +367,76 @@ object FinancialReportExporter {
    * Android's native [PdfDocument] API.
    */
   fun writePdfReport(data: FinancialReportData, outputStream: OutputStream) {
-    val pdf = PdfDocument()
+    val bytes = buildPdfBytes(data)
+    outputStream.write(bytes)
+    outputStream.flush()
+  }
+
+  /**
+   * Builds the complete byte payload for either [ExportFormat.CSV] or [ExportFormat.PDF].
+   */
+  fun buildReportBytes(data: FinancialReportData, format: ExportFormat): ByteArray =
+    when (format) {
+      ExportFormat.CSV -> buildCsvBytes(data)
+      ExportFormat.PDF -> buildPdfBytes(data)
+    }
+
+  /**
+   * Writes [bytes] safely to a SAF destination [uri], trying `"wt"` (truncate-write) first and
+   * falling back to standard `"w"` for providers that reject truncate mode.
+   */
+  fun writeBytesToDocumentUri(context: Context, uri: Uri, bytes: ByteArray) {
+    val resolver = context.contentResolver
+    val stream = try {
+      resolver.openOutputStream(uri, "wt")
+    } catch (_: Exception) {
+      null
+    } ?: resolver.openOutputStream(uri)
+      ?: error("Unable to open destination file.")
+
+    stream.use { out ->
+      out.write(bytes)
+      out.flush()
+    }
+  }
+
+  /**
+   * Zero-permission fallback for Android 10+ (API 29+) devices whose OEM ROM does not support
+   * `ACTION_CREATE_DOCUMENT`: saves the report directly into the public `Downloads/BudgetWise`
+   * folder via [MediaStore.Downloads].
+   */
+  fun saveBytesToDownloadsFallback(
+    context: Context,
+    fileName: String,
+    mimeType: String,
+    bytes: ByteArray,
+  ): Uri {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+      error("Device file picker is unavailable on this Android version.")
+    }
+    val resolver = context.contentResolver
+    val values = ContentValues().apply {
+      put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+      put(MediaStore.Downloads.MIME_TYPE, mimeType)
+      put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/BudgetWise")
+      put(MediaStore.Downloads.IS_PENDING, 1)
+    }
+    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+      ?: error("Unable to create file in Downloads.")
     try {
-      renderPdfReport(data, AndroidPdfDocumentSink(pdf))
-      pdf.writeTo(outputStream)
-      outputStream.flush()
-    } finally {
-      pdf.close()
+      resolver.openOutputStream(uri)?.use { out ->
+        out.write(bytes)
+        out.flush()
+      } ?: error("Unable to write to Downloads.")
+
+      val publishValues = ContentValues().apply {
+        put(MediaStore.Downloads.IS_PENDING, 0)
+      }
+      resolver.update(uri, publishValues, null, null)
+      return uri
+    } catch (err: Exception) {
+      runCatching { resolver.delete(uri, null, null) }
+      throw err
     }
   }
 
@@ -580,7 +714,7 @@ object FinancialReportExporter {
         val xPct = MARGIN_X + 412f
         val xStatus = MARGIN_X + 426f
 
-        c.drawText(ellipsizeText(budget.yearMonth.shortLabel() + " " + budget.yearMonth.year, bodyPaint, 68f), xMonth, textY, bodyPaint)
+        c.drawText(ellipsizeText("${budget.yearMonth.shortLabel()} ${budget.yearMonth.year}", bodyPaint, 68f), xMonth, textY, bodyPaint)
         c.drawText(ellipsizeText(compactCategoryLabel(budget.category), bodyPaint, 128f), xCat, textY, bodyPaint)
         drawRightAligned(c, formatPdfAmount(budget.spentAmount), xSpent, textY, bodyPaint)
         drawRightAligned(c, formatPdfAmount(budget.limitAmount), xLimit, textY, bodyPaint)

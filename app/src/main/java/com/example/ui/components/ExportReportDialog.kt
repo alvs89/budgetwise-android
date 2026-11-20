@@ -1,12 +1,10 @@
 package com.example.ui.components
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +14,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.PictureAsPdf
@@ -24,9 +26,12 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
@@ -35,58 +40,117 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import com.example.R
 import com.example.domain.ExportFormat
 import com.example.domain.ExportScope
 import com.example.domain.FinancialReportData
 import com.example.domain.FinancialReportExporter
+import com.example.domain.MILLIS_PER_DAY
+import com.example.domain.currentEpochDay
+import com.example.domain.epochDayFromDate
+import com.example.domain.formatEpochDay
 import com.example.ui.viewmodel.BudgetWiseUiState
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
+
+private enum class ActiveDatePickerTarget {
+  START,
+  END,
+}
 
 /**
- * Centered Material 3 dialog for exporting BudgetWise transactions and budgets to CSV or PDF.
+ * Centered Material 3 dialog for configuring and exporting BudgetWise transactions and budgets
+ * to CSV or PDF.
  *
- * Uses Android Storage Access Framework ([ActivityResultContracts.CreateDocument]) for zero-permission
- * saving to device storage and [FileProvider] for instant sharing to spreadsheet or PDF apps.
+ * Supports exporting any selected month, a custom start/end date range, or all recorded history,
+ * with responsive layout that prevents label clipping on compact Android viewports.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ExportReportDialog(
   uiState: BudgetWiseUiState,
-  onExportFeedback: (String) -> Unit,
+  isExporting: Boolean,
+  onRequestSave: (FinancialReportData, ExportFormat) -> Unit,
+  onRequestShare: (FinancialReportData, ExportFormat) -> Unit,
   onDismiss: () -> Unit,
 ) {
-  val context = LocalContext.current
-  val scope = rememberCoroutineScope()
-
   var selectedFormat by remember { mutableStateOf(ExportFormat.CSV) }
-  var selectedScope by remember { mutableStateOf(ExportScope.SELECTED_MONTH) }
+  var selectedScope by remember { mutableStateOf(ExportScope.MONTH) }
+  var targetMonth by remember(uiState.selectedMonth) { mutableStateOf(uiState.selectedMonth) }
+  var customStartEpochDay by remember(uiState.selectedMonth) {
+    mutableLongStateOf(epochDayFromDate(uiState.selectedMonth.year, uiState.selectedMonth.month, 1))
+  }
+  var customEndEpochDay by remember {
+    mutableLongStateOf(currentEpochDay())
+  }
+  var activeDatePicker by remember { mutableStateOf<ActiveDatePickerTarget?>(null) }
   var includeTransactions by remember { mutableStateOf(true) }
   var includeBudgets by remember { mutableStateOf(true) }
-  var isExporting by remember { mutableStateOf(false) }
-  var pendingSaveSnapshot by remember { mutableStateOf<Pair<FinancialReportData, ExportFormat>?>(null) }
+
+  activeDatePicker?.let { target ->
+    val initialDay = if (target == ActiveDatePickerTarget.START) customStartEpochDay else customEndEpochDay
+    val pickerState = rememberDatePickerState(
+      initialSelectedDateMillis = initialDay * MILLIS_PER_DAY,
+    )
+    DatePickerDialog(
+      onDismissRequest = { activeDatePicker = null },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            val selectedMillis = pickerState.selectedDateMillis
+            if (selectedMillis != null) {
+              val chosenDay = Math.floorDiv(selectedMillis, MILLIS_PER_DAY)
+              when (target) {
+                ActiveDatePickerTarget.START -> {
+                  customStartEpochDay = chosenDay
+                  if (chosenDay > customEndEpochDay) {
+                    customEndEpochDay = chosenDay
+                  }
+                }
+                ActiveDatePickerTarget.END -> {
+                  customEndEpochDay = chosenDay
+                  if (chosenDay < customStartEpochDay) {
+                    customStartEpochDay = chosenDay
+                  }
+                }
+              }
+            }
+            activeDatePicker = null
+          },
+          modifier = Modifier.testTag("export_date_picker_confirm"),
+        ) {
+          Text("OK")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { activeDatePicker = null }) {
+          Text("Cancel")
+        }
+      },
+    ) {
+      DatePicker(state = pickerState)
+    }
+  }
 
   val reportData = remember(
     uiState.preferences.displayName,
     uiState.preferences.preferredCurrency,
-    uiState.selectedMonth,
+    targetMonth,
+    customStartEpochDay,
+    customEndEpochDay,
     uiState.allTransactions,
     uiState.allBudgets,
     selectedScope,
@@ -96,12 +160,14 @@ fun ExportReportDialog(
     FinancialReportExporter.buildReportData(
       ownerName = uiState.preferences.displayName,
       currencyCode = uiState.preferences.preferredCurrency,
-      selectedMonth = uiState.selectedMonth,
+      selectedMonth = targetMonth,
       allTransactions = uiState.allTransactions,
       allBudgets = uiState.allBudgets,
       scope = selectedScope,
       includeTransactions = includeTransactions,
       includeBudgets = includeBudgets,
+      customStartEpochDay = customStartEpochDay,
+      customEndEpochDay = customEndEpochDay,
     )
   }
 
@@ -109,159 +175,76 @@ fun ExportReportDialog(
   val hasSelection = includeTransactions || includeBudgets
   val canExport = hasSelection && totalRecords > 0 && !isExporting
 
-  fun writeToUri(uri: android.net.Uri, data: FinancialReportData, format: ExportFormat) {
-    isExporting = true
-    scope.launch {
-      val result = runCatching {
-        withContext(Dispatchers.IO) {
-          context.contentResolver.openOutputStream(uri)?.use { out ->
-            when (format) {
-              ExportFormat.CSV -> FinancialReportExporter.writeCsvReport(data, out)
-              ExportFormat.PDF -> FinancialReportExporter.writePdfReport(data, out)
-            }
-          } ?: error("Unable to open destination file.")
-        }
-      }
-      isExporting = false
-      result.onSuccess {
-        val fileName = FinancialReportExporter.suggestedFileName(data, format)
-        onExportFeedback("Saved $fileName")
-        onDismiss()
-      }.onFailure { err ->
-        onExportFeedback("Export failed: ${err.localizedMessage ?: "Unable to write file"}")
-      }
-    }
-  }
-
-  val csvSaveLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.CreateDocument(ExportFormat.CSV.mimeType),
-  ) { uri ->
-    val snapshot = pendingSaveSnapshot
-    pendingSaveSnapshot = null
-    if (uri != null && snapshot != null) {
-      writeToUri(uri, snapshot.first, ExportFormat.CSV)
-    }
-  }
-
-  val pdfSaveLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.CreateDocument(ExportFormat.PDF.mimeType),
-  ) { uri ->
-    val snapshot = pendingSaveSnapshot
-    pendingSaveSnapshot = null
-    if (uri != null && snapshot != null) {
-      writeToUri(uri, snapshot.first, ExportFormat.PDF)
-    }
-  }
-
-  fun shareReport(data: FinancialReportData, format: ExportFormat) {
-    isExporting = true
-    scope.launch {
-      val fileName = FinancialReportExporter.suggestedFileName(data, format)
-      val fileResult = runCatching {
-        withContext(Dispatchers.IO) {
-          val exportsDir = File(context.cacheDir, "exports").apply { mkdirs() }
-          // Clean up stale temporary exports to keep app cache lightweight
-          exportsDir.listFiles()?.forEach { oldFile ->
-            if (oldFile.name != fileName) {
-              oldFile.delete()
-            }
-          }
-          val outFile = File(exportsDir, fileName)
-          outFile.outputStream().use { out ->
-            when (format) {
-              ExportFormat.CSV -> FinancialReportExporter.writeCsvReport(data, out)
-              ExportFormat.PDF -> FinancialReportExporter.writePdfReport(data, out)
-            }
-          }
-          outFile
-        }
-      }
-      isExporting = false
-      fileResult.onSuccess { outFile ->
-        try {
-          val authority = "${context.packageName}.fileprovider"
-          val contentUri = FileProvider.getUriForFile(context, authority, outFile)
-          val sendIntent = Intent(Intent.ACTION_SEND).apply {
-            type = format.mimeType
-            putExtra(Intent.EXTRA_STREAM, contentUri)
-            putExtra(Intent.EXTRA_SUBJECT, "BudgetWise Financial Report (${data.periodLabel})")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-          }
-          context.startActivity(
-            Intent.createChooser(sendIntent, "Share ${format.label} Report"),
-          )
-          onExportFeedback("Prepared $fileName to share")
-          onDismiss()
-        } catch (_: ActivityNotFoundException) {
-          onExportFeedback("No app available to share ${format.label} files")
-        } catch (err: Exception) {
-          onExportFeedback("Share failed: ${err.localizedMessage ?: "Unable to share file"}")
-        }
-      }.onFailure { err ->
-        onExportFeedback("Export failed: ${err.localizedMessage ?: "Unable to create report"}")
-      }
-    }
-  }
-
   StableFormDialog(
     onDismissRequest = { if (!isExporting) onDismiss() },
     title = {
       Row(
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
       ) {
-        Icon(
-          imageVector = Icons.Rounded.Description,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(22.dp),
-        )
-        Text(
-          text = stringResource(R.string.export_dialog_title),
-          style = MaterialTheme.typography.titleLarge,
-        )
-      }
-    },
-    dismissButton = {
-      TextButton(
-        onClick = onDismiss,
-        enabled = !isExporting,
-        modifier = Modifier.testTag("export_cancel_button"),
-      ) {
-        Text("Cancel")
+        Row(
+          modifier = Modifier.weight(1f),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.Description,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+          )
+          Text(
+            text = stringResource(R.string.export_dialog_title),
+            style = MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+        IconButton(
+          onClick = onDismiss,
+          enabled = !isExporting,
+          modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .testTag("export_cancel_button"),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.Close,
+            contentDescription = "Close",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
       }
     },
     confirmButton = {
       Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         OutlinedButton(
-          onClick = { shareReport(reportData, selectedFormat) },
+          onClick = { onRequestShare(reportData, selectedFormat) },
           enabled = canExport,
-          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-          modifier = Modifier.testTag("export_share_button"),
+          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+          modifier = Modifier
+            .weight(1f)
+            .testTag("export_share_button"),
         ) {
           Icon(
             imageVector = Icons.Rounded.Share,
             contentDescription = null,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(17.dp),
           )
           Spacer(modifier = Modifier.width(6.dp))
           Text("Share", maxLines = 1, softWrap = false)
         }
         Button(
-          onClick = {
-            val fileName = FinancialReportExporter.suggestedFileName(reportData, selectedFormat)
-            pendingSaveSnapshot = reportData to selectedFormat
-            when (selectedFormat) {
-              ExportFormat.CSV -> csvSaveLauncher.launch(fileName)
-              ExportFormat.PDF -> pdfSaveLauncher.launch(fileName)
-            }
-          },
+          onClick = { onRequestSave(reportData, selectedFormat) },
           enabled = canExport,
-          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-          modifier = Modifier.testTag("export_save_button"),
+          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+          modifier = Modifier
+            .weight(1f)
+            .testTag("export_save_button"),
         ) {
           if (isExporting) {
             CircularProgressIndicator(
@@ -273,7 +256,7 @@ fun ExportReportDialog(
             Icon(
               imageVector = Icons.Rounded.Download,
               contentDescription = null,
-              modifier = Modifier.size(16.dp),
+              modifier = Modifier.size(17.dp),
             )
           }
           Spacer(modifier = Modifier.width(6.dp))
@@ -319,42 +302,126 @@ fun ExportReportDialog(
       )
     }
 
-    // 2. Date range selector
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // 2. Flexible Time Period selector (Month stepper / Custom date range / All Time)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
       Text(
         text = "Time Period",
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurface,
       )
       SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        val monthShortLabel = "${uiState.selectedMonth.shortLabel()} ${uiState.selectedMonth.year}"
         ExportScope.entries.forEachIndexed { idx, scopeOption ->
           SegmentedButton(
             selected = selectedScope == scopeOption,
             onClick = { selectedScope = scopeOption },
             shape = SegmentedButtonDefaults.itemShape(idx, ExportScope.entries.size),
+            icon = {},
             modifier = Modifier.testTag("export_scope_${scopeOption.name.lowercase()}"),
           ) {
             Text(
-              text = if (scopeOption == ExportScope.SELECTED_MONTH) monthShortLabel else scopeOption.label,
+              text = scopeOption.label,
               maxLines = 1,
               softWrap = false,
             )
           }
         }
       }
+
+      when (selectedScope) {
+        ExportScope.MONTH -> {
+          Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              IconButton(
+                onClick = { targetMonth = targetMonth.previous() },
+                modifier = Modifier
+                  .minimumInteractiveComponentSize()
+                  .testTag("export_prev_month_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                  contentDescription = "Previous month",
+                )
+              }
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                Icon(
+                  imageVector = Icons.Rounded.CalendarMonth,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.size(16.dp),
+                )
+                Text(
+                  text = targetMonth.displayLabel(),
+                  style = MaterialTheme.typography.titleSmall,
+                  color = MaterialTheme.colorScheme.onSurface,
+                  modifier = Modifier.testTag("export_selected_month_label"),
+                )
+              }
+              IconButton(
+                onClick = { targetMonth = targetMonth.next() },
+                modifier = Modifier
+                  .minimumInteractiveComponentSize()
+                  .testTag("export_next_month_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                  contentDescription = "Next month",
+                )
+              }
+            }
+          }
+        }
+        ExportScope.CUSTOM_RANGE -> {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            DateRangeFieldButton(
+              label = "From",
+              dateText = formatEpochDay(customStartEpochDay, "MMM d, yyyy"),
+              onClick = { activeDatePicker = ActiveDatePickerTarget.START },
+              modifier = Modifier
+                .weight(1f)
+                .testTag("export_custom_start_button"),
+            )
+            DateRangeFieldButton(
+              label = "To",
+              dateText = formatEpochDay(customEndEpochDay, "MMM d, yyyy"),
+              onClick = { activeDatePicker = ActiveDatePickerTarget.END },
+              modifier = Modifier
+                .weight(1f)
+                .testTag("export_custom_end_button"),
+            )
+          }
+        }
+        ExportScope.ALL_TIME -> Unit
+      }
     }
 
-    // 3. Included datasets
+    // 3. Included datasets — FlowRow ensures natural chip widths so "Transactions" never clips
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
       Text(
         text = "Include Data",
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurface,
       )
-      Row(
+      FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         FilterChip(
           selected = includeTransactions,
@@ -371,9 +438,7 @@ fun ExportReportDialog(
           } else {
             null
           },
-          modifier = Modifier
-            .weight(1f)
-            .testTag("export_include_transactions"),
+          modifier = Modifier.testTag("export_include_transactions"),
         )
         FilterChip(
           selected = includeBudgets,
@@ -390,9 +455,7 @@ fun ExportReportDialog(
           } else {
             null
           },
-          modifier = Modifier
-            .weight(1f)
-            .testTag("export_include_budgets"),
+          modifier = Modifier.testTag("export_include_budgets"),
         )
       }
     }
@@ -401,7 +464,7 @@ fun ExportReportDialog(
     val previewSummary = remember(reportData, hasSelection, totalRecords, selectedFormat) {
       when {
         !hasSelection -> "Select at least one dataset (Transactions or Budgets) to export."
-        totalRecords == 0 -> "No records found for ${reportData.periodLabel}. Switch to All Time or add entries first."
+        totalRecords == 0 -> "No records found for ${reportData.periodLabel}. Try another month, range, or All Time."
         else -> {
           val parts = buildList {
             if (reportData.includeTransactions) {
@@ -434,11 +497,58 @@ fun ExportReportDialog(
           text = FinancialReportExporter.suggestedFileName(reportData, selectedFormat),
           style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
           color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
         )
         Text(
           text = previewSummary,
           style = MaterialTheme.typography.bodySmall,
           color = if (canExport) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun DateRangeFieldButton(
+  label: String,
+  dateText: String,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Surface(
+    onClick = onClick,
+    shape = RoundedCornerShape(12.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    modifier = modifier,
+  ) {
+    Column(
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Rounded.CalendarMonth,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(14.dp),
+        )
+        Text(
+          text = dateText,
+          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
         )
       }
     }

@@ -35,11 +35,14 @@ import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -102,6 +105,7 @@ fun HomeScreen(
   onNextMonth: () -> Unit,
   onHomePeriodScopeChange: (HomePeriodScope) -> Unit,
   onToggleBalanceHidden: () -> Unit,
+  onOpenNotifications: () -> Unit,
   onOpenSettings: () -> Unit,
   onNavigateToActivity: () -> Unit,
   onNavigateToBudgets: () -> Unit,
@@ -160,67 +164,122 @@ fun HomeScreen(
       contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-      // Top Greeting + Settings
+      // Top Greeting (full-width Row 1) + Title & Sleek Action Icons (Row 2)
       item {
-        Row(
+        Column(
           modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(12.dp),
-          verticalAlignment = Alignment.CenterVertically,
+          verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = "GOOD DAY, ${uiState.preferences.displayName.uppercase()}",
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.primary,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
+          Text(
+            text = "GOOD DAY, ${uiState.preferences.displayName.uppercase()}",
+            style = MaterialTheme.typography.labelSmall.copy(
+              letterSpacing = 0.6.sp,
+              fontWeight = FontWeight.SemiBold,
+            ),
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("home_greeting_text"),
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
             AutoResizeSingleLineText(
               text = "My Finances",
               style = MaterialTheme.typography.displaySmall,
               color = MaterialTheme.colorScheme.onBackground,
               minFontSize = 20.sp,
+              modifier = Modifier.weight(1f),
             )
-          }
-          Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            val isHidden = LocalIsBalanceHidden.current
-            Surface(
-              shape = CircleShape,
-              color = MaterialTheme.colorScheme.surface,
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            Row(
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+              verticalAlignment = Alignment.CenterVertically,
             ) {
-              IconButton(
-                onClick = onToggleBalanceHidden,
-                modifier = Modifier
-                  .minimumInteractiveComponentSize()
-                  .testTag("privacy_toggle_button"),
+              val isHidden = LocalIsBalanceHidden.current
+              Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
               ) {
-                Icon(
-                  imageVector = if (isHidden) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                  contentDescription = if (isHidden) "Show balances" else "Hide balances",
-                  tint = if (isHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                )
+                IconButton(
+                  onClick = onOpenNotifications,
+                  modifier = Modifier
+                    .size(42.dp)
+                    .testTag("notifications_button"),
+                ) {
+                  BadgedBox(
+                    badge = {
+                      if (uiState.unreadAlertCount > 0) {
+                        Badge(
+                          containerColor = MaterialTheme.colorScheme.error,
+                          contentColor = MaterialTheme.colorScheme.onError,
+                        ) {
+                          Text(
+                            text = if (uiState.unreadAlertCount > 9) "9+" else uiState.unreadAlertCount.toString(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                          )
+                        }
+                      }
+                    },
+                  ) {
+                    Icon(
+                      imageVector = Icons.Rounded.Notifications,
+                      contentDescription = if (uiState.unreadAlertCount > 0) {
+                        "Notifications (${uiState.unreadAlertCount} unread)"
+                      } else {
+                        "Open notifications"
+                      },
+                      tint = if (uiState.unreadAlertCount > 0) {
+                        MaterialTheme.colorScheme.primary
+                      } else {
+                        MaterialTheme.colorScheme.onSurface
+                      },
+                      modifier = Modifier.size(20.dp),
+                    )
+                  }
+                }
               }
-            }
-            Surface(
-              shape = CircleShape,
-              color = MaterialTheme.colorScheme.surface,
-              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            ) {
-              IconButton(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                  .minimumInteractiveComponentSize()
-                  .testTag("settings_button"),
+              Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
               ) {
-                Icon(
-                  imageVector = Icons.Rounded.Settings,
-                  contentDescription = "Open settings",
-                  tint = MaterialTheme.colorScheme.onSurface,
-                )
+                IconButton(
+                  onClick = onToggleBalanceHidden,
+                  modifier = Modifier
+                    .size(42.dp)
+                    .testTag("privacy_toggle_button"),
+                ) {
+                  Icon(
+                    imageVector = if (isHidden) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                    contentDescription = if (isHidden) "Show balances" else "Hide balances",
+                    tint = if (isHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(20.dp),
+                  )
+                }
+              }
+              Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+              ) {
+                IconButton(
+                  onClick = onOpenSettings,
+                  modifier = Modifier
+                    .size(42.dp)
+                    .testTag("settings_button"),
+                ) {
+                  Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = "Open settings",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(20.dp),
+                  )
+                }
               }
             }
           }
@@ -498,6 +557,7 @@ fun HomeScreen(
         ) {
           SectionHeader(
             title = "Spending overview",
+            icon = Icons.Rounded.ReceiptLong,
             actionLabel = "Insights",
             onActionClick = onNavigateToInsights,
           )
@@ -529,7 +589,8 @@ fun HomeScreen(
       // Budget Overview
       item {
         SectionHeader(
-          title = if (isAllTime) "Budget overview · ${uiState.selectedMonth.shortLabel()}" else "Budget overview",
+          title = if (isAllTime) "Budget overview · ${uiState.selectedMonth.monthNameOnly()}" else "Budget overview",
+          icon = Icons.Rounded.AccountBalanceWallet,
           actionLabel = "All budgets",
           onActionClick = onNavigateToBudgets,
         )
@@ -560,6 +621,7 @@ fun HomeScreen(
       item {
         SectionHeader(
           title = "Savings goals",
+          icon = Icons.Rounded.Savings,
           actionLabel = "All goals",
           onActionClick = onNavigateToGoals,
         )
@@ -633,6 +695,7 @@ fun HomeScreen(
       item {
         SectionHeader(
           title = "Recent transactions",
+          icon = Icons.Rounded.ReceiptLong,
           actionLabel = "See all",
           onActionClick = onNavigateToActivity,
         )

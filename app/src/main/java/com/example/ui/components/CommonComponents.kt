@@ -355,6 +355,7 @@ fun MonthSelectorBar(
 @Composable
 fun SectionHeader(
   title: String,
+  icon: ImageVector? = null,
   actionLabel: String? = null,
   onActionClick: (() -> Unit)? = null,
   modifier: Modifier = Modifier,
@@ -364,14 +365,27 @@ fun SectionHeader(
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Text(
-      text = title,
-      style = MaterialTheme.typography.titleMedium,
-      color = MaterialTheme.colorScheme.onBackground,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
       modifier = Modifier.weight(1f),
-    )
+    ) {
+      if (icon != null) {
+        Icon(
+          imageVector = icon,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(20.dp),
+        )
+      }
+      Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onBackground,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
     if (actionLabel != null && onActionClick != null) {
       TextButton(
         onClick = onActionClick,
