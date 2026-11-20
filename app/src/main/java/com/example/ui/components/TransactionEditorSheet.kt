@@ -256,26 +256,16 @@ fun TransactionEditorSheet(
               .testTag("tx_title_input"),
           )
 
-          OutlinedTextField(
+          AmountInputWithCalculator(
             value = amountText,
             onValueChange = {
               amountText = it
               amountError = null
             },
-            label = { Text("Amount ($currencyCode)") },
-            prefix = {
-              Text(
-                text = "$currencySymbol ",
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-              )
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            isError = amountError != null,
-            supportingText = amountError?.let { msg -> { Text(msg) } },
-            singleLine = true,
-            modifier = Modifier
-              .fillMaxWidth()
-              .testTag("tx_amount_input"),
+            label = "Amount ($currencyCode)",
+            currencyCode = currencyCode,
+            fieldTestTag = "tx_amount_input",
+            errorText = amountError,
           )
 
           // Compact Category Selector Row -> opens 4-column circular icon grid sheet

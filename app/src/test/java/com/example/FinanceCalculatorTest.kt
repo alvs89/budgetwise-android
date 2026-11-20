@@ -3,7 +3,9 @@ package com.example
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
+import com.example.domain.AmountCalculatorEngine
 import com.example.domain.BudgetHealthStatus
+import com.example.domain.CalcEvaluation
 import com.example.domain.CategoryBreakdown
 import com.example.domain.CategoryVisualMatcher
 import com.example.domain.FinanceCalculator
@@ -435,5 +437,52 @@ class FinanceCalculatorTest {
     assertNotEquals(resolved.first(), resolved.last())
     // All 4 slices must have distinct resolved colors
     assertEquals(4, resolved.toSet().size)
+  }
+
+  @Test
+  fun `amountCalculatorEngine evaluates precedence, real-world expenses, and edge cases safely`() {
+    // Splitting a meal: 1850 ÷ 4 = 462.50
+    val split = AmountCalculatorEngine.evaluate("1850÷4")
+    assertEquals(CalcEvaluation.Valid(BigDecimal("462.50")), split)
+    assertEquals("462.50", AmountCalculatorEngine.formatForAmountField((split as CalcEvaluation.Valid).value))
+    assertEquals("1,850 ÷ 4", AmountCalculatorEngine.formatExpressionForDisplay("1850÷4"))
+
+    // Combining daily commutes & snacks: 15 + 15 + 65 + 120 = 215
+    val sum = AmountCalculatorEngine.evaluate("15+15+65+120")
+    assertEquals(CalcEvaluation.Valid(BigDecimal("215.00")), sum)
+    assertEquals("215", AmountCalculatorEngine.formatForAmountField((sum as CalcEvaluation.Valid).value))
+
+    // Order of operations: 100 + 50 × 2 = 200 (not 300)
+    assertEquals(
+      CalcEvaluation.Valid(BigDecimal("200.00")),
+      AmountCalculatorEngine.evaluate("100+50×2"),
+    )
+
+    // Discount / VAT: 1500 × 0.8 = 1200
+    assertEquals(
+      CalcEvaluation.Valid(BigDecimal("1200.00")),
+      AmountCalculatorEngine.evaluate("1500×0.8"),
+    )
+
+    // Division by zero guard
+    val divZero = AmountCalculatorEngine.evaluate("500÷0")
+    assertTrue(divZero is CalcEvaluation.Error)
+    assertEquals("Cannot divide by zero", (divZero as CalcEvaluation.Error).message)
+
+    // Negative result guard
+    val negative = AmountCalculatorEngine.evaluate("50−200")
+    assertTrue(negative is CalcEvaluation.Error)
+    assertEquals("Amount cannot be negative", (negative as CalcEvaluation.Error).message)
+
+    // Trailing operator evaluates prefix safely during live typing
+    assertEquals(
+      CalcEvaluation.Valid(BigDecimal("1850.00")),
+      AmountCalculatorEngine.evaluate("1850÷"),
+    )
+
+    // Input guards: duplicate decimal & operator replacement
+    assertEquals("12.5", AmountCalculatorEngine.appendDecimal("12.5"))
+    assertEquals("100×", AmountCalculatorEngine.appendOperator("100+", '×'))
+    assertEquals("462.50", AmountCalculatorEngine.commitEquals("1850÷4"))
   }
 }

@@ -53,6 +53,7 @@ import com.example.domain.CurrencyOption
 import com.example.domain.FinanceCalculator
 import com.example.domain.TransactionType
 import com.example.domain.YearMonthKey
+import com.example.ui.components.AmountInputWithCalculator
 import com.example.ui.components.AutoResizeSingleLineText
 import com.example.ui.components.BudgetProgressCard
 import com.example.ui.components.CategoryPickerBottomSheet
@@ -439,21 +440,16 @@ private fun BudgetEditorDialog(
       label = "Budget Category",
       testTag = "budget_category_dropdown",
     )
-    OutlinedTextField(
+    AmountInputWithCalculator(
       value = limitText,
       onValueChange = {
         limitText = it
         limitError = null
       },
-      label = { Text("Monthly Spending Limit") },
-      prefix = { Text("$currencySymbol ") },
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-      isError = limitError != null,
-      supportingText = limitError?.let { msg -> { Text(msg) } },
-      singleLine = true,
-      modifier = Modifier
-        .fillMaxWidth()
-        .testTag("budget_limit_input"),
+      label = "Monthly Spending Limit",
+      currencyCode = currencyCode,
+      fieldTestTag = "budget_limit_input",
+      errorText = limitError,
     )
   }
 

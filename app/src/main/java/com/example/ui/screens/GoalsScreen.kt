@@ -82,6 +82,7 @@ import com.example.domain.MILLIS_PER_DAY
 import com.example.domain.SavingsGoalSummary
 import com.example.domain.currentEpochDay
 import com.example.domain.formatEpochDay
+import com.example.ui.components.AmountInputWithCalculator
 import com.example.ui.components.AutoResizeSingleLineText
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.EmptyStatePanel
@@ -574,21 +575,16 @@ private fun GoalEditorDialog(
         .fillMaxWidth()
         .testTag("goal_name_input"),
     )
-    OutlinedTextField(
+    AmountInputWithCalculator(
       value = targetText,
       onValueChange = {
         targetText = it
         amountError = null
       },
-      label = { Text("Target Amount") },
-      prefix = { Text("$currencySymbol ") },
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-      isError = amountError != null,
-      supportingText = amountError?.let { msg -> { Text(msg) } },
-      singleLine = true,
-      modifier = Modifier
-        .fillMaxWidth()
-        .testTag("goal_target_input"),
+      label = "Target Amount",
+      currencyCode = currencyCode,
+      fieldTestTag = "goal_target_input",
+      errorText = amountError,
     )
     OutlinedButton(
       onClick = { showDatePicker = true },
@@ -689,21 +685,16 @@ private fun GoalContributionDialog(
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    OutlinedTextField(
+    AmountInputWithCalculator(
       value = amountText,
       onValueChange = {
         amountText = it
         amountError = null
       },
-      label = { Text("Amount") },
-      prefix = { Text("$currencySymbol ") },
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-      isError = amountError != null,
-      supportingText = amountError?.let { msg -> { Text(msg) } },
-      singleLine = true,
-      modifier = Modifier
-        .fillMaxWidth()
-        .testTag("contribution_amount_input"),
+      label = "Amount",
+      currencyCode = currencyCode,
+      fieldTestTag = "contribution_amount_input",
+      errorText = amountError,
     )
     OutlinedTextField(
       value = note,
