@@ -60,4 +60,11 @@
     <string name="export_action_label">Export Report (CSV / PDF)</string>
     <string name="export_csv_hint">Spreadsheet-ready with summary, budgets, and transactions for Excel or Google Sheets.</string>
     <string name="export_pdf_hint">Clean, printable A4 financial statement with KPI cards, budget health, and ledger.</string>
+    <string name="notification_delete_single_title">Delete Notification?</string>
+    <string name="notification_delete_single_message">Remove \"%1$s\" from your notifications? Your transactions, budgets, and goals will not be affected.</string>
+    <string name="notification_delete_confirm">Delete</string>
+    <string name="notification_clear_all_title">Clear All Notifications?</string>
+    <string name="notification_clear_all_message_one">Remove 1 notification from your inbox? Your transactions, budgets, and savings goals will remain intact.</string>
+    <string name="notification_clear_all_message_many">Remove all %1$d notifications from your inbox? Your transactions, budgets, and savings goals will remain intact.</string>
+    <string name="notification_clear_all_confirm">Clear All</string>
 </resources>

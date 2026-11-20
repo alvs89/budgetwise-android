@@ -369,9 +369,12 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
           showNotificationsSheet = false
           navigateToAlertDestination(alert.targetDestination)
         },
-        onMarkAlertRead = viewModel::markAlertAsRead,
+        onToggleAlertRead = { alert ->
+          viewModel.toggleAlertRead(alert.id, alert.isRead)
+        },
         onDismissAlert = viewModel::deleteAlert,
         onMarkAllRead = viewModel::markAllAlertsAsRead,
+        onMarkAllUnread = viewModel::markAllAlertsAsUnread,
         onClearAll = viewModel::clearAllAlerts,
         onOpenSettings = { navController.navigate(SettingsRoute) },
         onDismiss = { showNotificationsSheet = false },

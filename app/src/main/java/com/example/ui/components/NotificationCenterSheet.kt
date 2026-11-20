@@ -17,17 +17,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.MarkEmailRead
+import androidx.compose.material.icons.rounded.MarkEmailUnread
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Schedule
@@ -45,15 +44,20 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.local.entity.FinancialAlertEntity
 import com.example.domain.AlertSeverity
 import com.example.domain.FinancialAlertType
@@ -68,14 +72,17 @@ fun NotificationCenterSheet(
   alerts: List<FinancialAlertEntity>,
   unreadCount: Int,
   onAlertClick: (FinancialAlertEntity) -> Unit,
-  onMarkAlertRead: (Long) -> Unit,
+  onToggleAlertRead: (FinancialAlertEntity) -> Unit,
   onDismissAlert: (Long) -> Unit,
   onMarkAllRead: () -> Unit,
+  onMarkAllUnread: () -> Unit,
   onClearAll: () -> Unit,
   onOpenSettings: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  var alertPendingDelete by remember { mutableStateOf<FinancialAlertEntity?>(null) }
+  var showClearAllConfirm by remember { mutableStateOf(false) }
 
   ModalBottomSheet(
     onDismissRequest = onDismiss,
@@ -134,13 +141,9 @@ fun NotificationCenterSheet(
           }
         }
 
-        // Balanced, Layout-Stable Action Bar (never collapses into an empty left void)
+        // Concise, Zero-Truncation Action Bar with Dynamic Bulk Read/Unread Toggle
         if (alerts.isNotEmpty()) {
-          val statusLabel = if (unreadCount > 0) {
-            "$unreadCount unread"
-          } else {
-            "${alerts.size} ${if (alerts.size == 1) "alert" else "alerts"} · All caught up"
-          }
+          val hasUnread = unreadCount > 0
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -149,47 +152,45 @@ fun NotificationCenterSheet(
             verticalAlignment = Alignment.CenterVertically,
           ) {
             Text(
-              text = statusLabel,
-              style = MaterialTheme.typography.labelMedium,
-              color = if (unreadCount > 0) {
+              text = if (hasUnread) "$unreadCount unread" else "All read",
+              style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Medium,
+              ),
+              color = if (hasUnread) {
                 MaterialTheme.colorScheme.primary
               } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
               },
               maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              modifier = Modifier
-                .weight(1f)
-                .padding(end = 8.dp)
-                .testTag("notification_status_summary"),
+              softWrap = false,
+              modifier = Modifier.testTag("notification_status_summary"),
             )
             Row(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
               TextButton(
-                onClick = onMarkAllRead,
-                enabled = unreadCount > 0,
+                onClick = if (hasUnread) onMarkAllRead else onMarkAllUnread,
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                modifier = Modifier
-                  .alpha(if (unreadCount > 0) 1f else 0.38f)
-                  .testTag("notification_mark_all_read"),
+                modifier = Modifier.testTag(
+                  if (hasUnread) "notification_mark_all_read" else "notification_mark_all_unread"
+                ),
               ) {
                 Icon(
-                  imageVector = Icons.Rounded.DoneAll,
+                  imageVector = if (hasUnread) Icons.Rounded.DoneAll else Icons.Rounded.MarkEmailUnread,
                   contentDescription = null,
                   modifier = Modifier.size(16.dp),
                 )
                 Text(
-                  text = "Mark all read",
+                  text = if (hasUnread) "Mark all read" else "Mark all unread",
                   style = MaterialTheme.typography.labelMedium,
                   maxLines = 1,
                   softWrap = false,
-                  modifier = Modifier.padding(start = 4.dp),
+                  modifier = Modifier.padding(start = 5.dp),
                 )
               }
               TextButton(
-                onClick = onClearAll,
+                onClick = { showClearAllConfirm = true },
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                 modifier = Modifier.testTag("notification_clear_all"),
               ) {
@@ -205,7 +206,7 @@ fun NotificationCenterSheet(
           }
           HorizontalDivider(
             color = MaterialTheme.colorScheme.outlineVariant,
-            modifier = Modifier.padding(bottom = 10.dp),
+            modifier = Modifier.padding(bottom = 12.dp),
           )
         } else {
           Spacer(modifier = Modifier.height(10.dp))
@@ -263,8 +264,8 @@ fun NotificationCenterSheet(
               NotificationAlertCard(
                 alert = alert,
                 onClick = { onAlertClick(alert) },
-                onMarkRead = { onMarkAlertRead(alert.id) },
-                onDismiss = { onDismissAlert(alert.id) },
+                onToggleRead = { onToggleAlertRead(alert) },
+                onDismiss = { alertPendingDelete = alert },
               )
             }
           }
@@ -272,13 +273,46 @@ fun NotificationCenterSheet(
       }
     }
   }
+
+  alertPendingDelete?.let { target ->
+    ConfirmationDialog(
+      title = stringResource(R.string.notification_delete_single_title),
+      message = stringResource(R.string.notification_delete_single_message, target.title),
+      confirmLabel = stringResource(R.string.notification_delete_confirm),
+      isDestructive = true,
+      onConfirm = {
+        onDismissAlert(target.id)
+        alertPendingDelete = null
+      },
+      onDismiss = { alertPendingDelete = null },
+    )
+  }
+
+  if (showClearAllConfirm && alerts.isNotEmpty()) {
+    val count = alerts.size
+    ConfirmationDialog(
+      title = stringResource(R.string.notification_clear_all_title),
+      message = if (count == 1) {
+        stringResource(R.string.notification_clear_all_message_one)
+      } else {
+        stringResource(R.string.notification_clear_all_message_many, count)
+      },
+      confirmLabel = stringResource(R.string.notification_clear_all_confirm),
+      isDestructive = true,
+      onConfirm = {
+        onClearAll()
+        showClearAllConfirm = false
+      },
+      onDismiss = { showClearAllConfirm = false },
+    )
+  }
 }
 
 @Composable
 private fun NotificationAlertCard(
   alert: FinancialAlertEntity,
   onClick: () -> Unit,
-  onMarkRead: () -> Unit,
+  onToggleRead: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   val financeColors = LocalFinanceColors.current
@@ -299,48 +333,43 @@ private fun NotificationAlertCard(
     SimpleDateFormat("MMM d · h:mm a", Locale.getDefault()).format(Date(alert.createdAtMillis))
   }
 
+  // "One Quiet Unread Signal": surface contrast + typography weight only (no vertical stripes or dots)
+  val containerColor = if (alert.isRead) {
+    MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+  } else {
+    MaterialTheme.colorScheme.surfaceVariant
+  }
+  val borderColor = if (alert.isRead) {
+    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+  } else {
+    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+  }
+
   Surface(
     shape = MaterialTheme.shapes.medium,
-    color = if (alert.isRead) {
-      MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-    } else {
-      MaterialTheme.colorScheme.surfaceVariant
-    },
-    border = if (!alert.isRead) {
-      BorderStroke(1.dp, accentColor.copy(alpha = 0.48f))
-    } else {
-      BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    },
+    color = containerColor,
+    border = BorderStroke(1.dp, borderColor),
     modifier = Modifier
       .fillMaxWidth()
       .clip(MaterialTheme.shapes.medium)
       .clickable(onClick = onClick)
       .testTag("notification_alert_card_${alert.id}"),
   ) {
-    Row(
+    Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
-      verticalAlignment = Alignment.Top,
+        .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      // Unread left accent bar + severity icon
+      // Top Row: Leading Icon + Title + Top-Right Persistent Read/Unread Toggle & Dismiss
       Row(
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        if (!alert.isRead) {
-          Box(
-            modifier = Modifier
-              .width(3.dp)
-              .height(34.dp)
-              .clip(RoundedCornerShape(50))
-              .background(accentColor),
-          )
-        }
         Box(
           modifier = Modifier
-            .size(36.dp)
+            .size(34.dp)
             .clip(CircleShape)
             .background(accentColor.copy(alpha = if (alert.isRead) 0.09f else 0.16f)),
           contentAlignment = Alignment.Center,
@@ -348,92 +377,90 @@ private fun NotificationAlertCard(
           Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (alert.isRead) accentColor.copy(alpha = 0.72f) else accentColor,
-            modifier = Modifier.size(20.dp),
+            tint = if (alert.isRead) accentColor.copy(alpha = 0.65f) else accentColor,
+            modifier = Modifier.size(18.dp),
           )
         }
-      }
 
-      Column(
-        modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-      ) {
+        Text(
+          text = alert.title,
+          style = MaterialTheme.typography.titleSmall.copy(
+            fontWeight = if (alert.isRead) FontWeight.Normal else FontWeight.SemiBold,
+          ),
+          color = if (alert.isRead) {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+          } else {
+            MaterialTheme.colorScheme.onSurface
+          },
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f),
+        )
+
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          horizontalArrangement = Arrangement.spacedBy(0.dp),
         ) {
-          if (!alert.isRead) {
-            Box(
-              modifier = Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(accentColor),
-            )
-          }
-          Text(
-            text = alert.title,
-            style = MaterialTheme.typography.titleSmall.copy(
-              fontWeight = if (alert.isRead) FontWeight.Normal else FontWeight.SemiBold,
-            ),
-            color = if (alert.isRead) {
-              MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f)
-            } else {
-              MaterialTheme.colorScheme.onSurface
-            },
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-        Text(
-          text = alert.message,
-          style = MaterialTheme.typography.bodySmall,
-          color = if (alert.isRead) {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f)
-          } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-          },
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-          text = timestampLabel,
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-        )
-      }
-
-      // Individual Mark-as-Read (when unread) + Dismiss actions
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(0.dp),
-      ) {
-        if (!alert.isRead) {
           IconButton(
-            onClick = onMarkRead,
+            onClick = onToggleRead,
             modifier = Modifier
               .size(40.dp)
-              .testTag("notification_mark_read_${alert.id}"),
+              .testTag("notification_toggle_read_${alert.id}"),
           ) {
             Icon(
-              imageVector = Icons.Rounded.Check,
-              contentDescription = "Mark as read",
-              tint = MaterialTheme.colorScheme.primary,
+              imageVector = if (alert.isRead) {
+                Icons.Rounded.MarkEmailUnread
+              } else {
+                Icons.Rounded.MarkEmailRead
+              },
+              contentDescription = if (alert.isRead) "Mark as unread" else "Mark as read",
+              tint = if (alert.isRead) {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+              } else {
+                MaterialTheme.colorScheme.primary
+              },
+              modifier = Modifier.size(18.dp),
+            )
+          }
+          IconButton(
+            onClick = onDismiss,
+            modifier = Modifier
+              .size(40.dp)
+              .testTag("notification_dismiss_${alert.id}"),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.Close,
+              contentDescription = "Delete notification",
+              tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
               modifier = Modifier.size(18.dp),
             )
           }
         }
-        IconButton(
-          onClick = onDismiss,
-          modifier = Modifier
-            .size(40.dp)
-            .testTag("notification_dismiss_${alert.id}"),
-        ) {
-          Icon(
-            imageVector = Icons.Rounded.Close,
-            contentDescription = "Dismiss notification",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(17.dp),
-          )
-        }
+      }
+
+      // Full-Width Message Body & Timestamp Underneath (maximizes reading width)
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(end = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+      ) {
+        Text(
+          text = alert.message,
+          style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+          color = if (alert.isRead) {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
+          } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+          },
+        )
+        Text(
+          text = timestampLabel,
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+            alpha = if (alert.isRead) 0.5f else 0.72f,
+          ),
+        )
       }
     }
   }

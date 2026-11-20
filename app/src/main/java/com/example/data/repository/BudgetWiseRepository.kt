@@ -242,8 +242,16 @@ class BudgetWiseRepository(
     financialAlertDao.markAsRead(id)
   }
 
+  suspend fun setAlertRead(id: Long, isRead: Boolean) {
+    financialAlertDao.setRead(id, isRead)
+  }
+
   suspend fun markAllAlertsAsRead() {
     financialAlertDao.markAllAsRead()
+  }
+
+  suspend fun markAllAlertsAsUnread() {
+    financialAlertDao.markAllAsUnread()
   }
 
   suspend fun deleteAlert(id: Long) {

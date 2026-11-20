@@ -265,6 +265,15 @@ class FinancialAlertSystemTest {
       dao.markAsRead(firstId)
       assertEquals(true, dao.observeAllAlerts().first()[0].isRead)
 
+      dao.setRead(firstId, false)
+      assertEquals(false, dao.observeAllAlerts().first()[0].isRead)
+
+      dao.markAllAsRead()
+      assertEquals(true, dao.observeAllAlerts().first()[0].isRead)
+
+      dao.markAllAsUnread()
+      assertEquals(false, dao.observeAllAlerts().first()[0].isRead)
+
       dao.deleteByDedupeKeyPrefix(
         FinancialAlertEvaluator.budgetDedupePrefix("Transportation", nov2026)
       )

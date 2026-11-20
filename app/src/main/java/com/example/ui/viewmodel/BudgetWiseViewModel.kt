@@ -1374,9 +1374,21 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     }
   }
 
+  fun toggleAlertRead(alertId: Long, isCurrentlyRead: Boolean) {
+    viewModelScope.launch {
+      repository.setAlertRead(alertId, isRead = !isCurrentlyRead)
+    }
+  }
+
   fun markAllAlertsAsRead() {
     viewModelScope.launch {
       repository.markAllAlertsAsRead()
+    }
+  }
+
+  fun markAllAlertsAsUnread() {
+    viewModelScope.launch {
+      repository.markAllAlertsAsUnread()
     }
   }
 

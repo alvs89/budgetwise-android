@@ -22,8 +22,14 @@ interface FinancialAlertDao {
   @Query("UPDATE financial_alerts SET isRead = 1 WHERE id = :id")
   suspend fun markAsRead(id: Long)
 
+  @Query("UPDATE financial_alerts SET isRead = :isRead WHERE id = :id")
+  suspend fun setRead(id: Long, isRead: Boolean)
+
   @Query("UPDATE financial_alerts SET isRead = 1 WHERE isRead = 0")
   suspend fun markAllAsRead()
+
+  @Query("UPDATE financial_alerts SET isRead = 0 WHERE isRead = 1")
+  suspend fun markAllAsUnread()
 
   @Query("DELETE FROM financial_alerts WHERE id = :id")
   suspend fun deleteById(id: Long)
