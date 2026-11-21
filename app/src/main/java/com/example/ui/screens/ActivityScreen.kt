@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,7 @@ import com.example.domain.compactCategoryLabel
 import com.example.ui.components.AutoResizeSingleLineText
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.EmptyStatePanel
+import com.example.ui.components.LocalIsAppLocked
 import com.example.ui.components.MonthSelectorBar
 import com.example.ui.components.SwipeToRevealDeleteRow
 import com.example.ui.components.TransactionRowItem
@@ -74,6 +76,13 @@ fun ActivityScreen(
 ) {
   var showSortMenu by remember { mutableStateOf(false) }
   var pendingDeleteTx by remember { mutableStateOf<TransactionEntity?>(null) }
+  val isAppLocked = LocalIsAppLocked.current
+
+  LaunchedEffect(isAppLocked) {
+    if (isAppLocked && showSortMenu) {
+      showSortMenu = false
+    }
+  }
 
   pendingDeleteTx?.let { tx ->
     ConfirmationDialog(
@@ -161,7 +170,7 @@ fun ActivityScreen(
                 )
               }
               DropdownMenu(
-                expanded = showSortMenu,
+                expanded = showSortMenu && !isAppLocked,
                 onDismissRequest = { showSortMenu = false },
               ) {
                 TransactionSortOrder.entries.forEach { order ->

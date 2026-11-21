@@ -35,6 +35,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,8 @@ fun StableFormDialog(
   modifier: Modifier = Modifier,
   content: @Composable ColumnScope.() -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismissRequest)) return
+
   Dialog(
     onDismissRequest = onDismissRequest,
     properties = DialogProperties(
@@ -154,16 +157,25 @@ fun CategoryDropdown(
   fieldTestTag: String = "budget_category_dropdown",
 ) {
   var expanded by remember { mutableStateOf(false) }
+  val isAppLocked = LocalIsAppLocked.current
+  LaunchedEffect(isAppLocked) {
+    if (isAppLocked && expanded) {
+      expanded = false
+    }
+  }
+  val effectiveExpanded = expanded && !isAppLocked
   val focusManager = LocalFocusManager.current
   val selectedTint = categoryTint(selectedCategory, allCategories)
 
   ExposedDropdownMenuBox(
-    expanded = expanded,
+    expanded = effectiveExpanded,
     onExpandedChange = { next ->
-      if (next) {
-        focusManager.clearFocus()
+      if (!isAppLocked) {
+        if (next) {
+          focusManager.clearFocus()
+        }
+        expanded = next
       }
-      expanded = next
     },
     modifier = modifier.fillMaxWidth(),
   ) {
@@ -193,7 +205,7 @@ fun CategoryDropdown(
         }
       },
       trailingIcon = {
-        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+        ExposedDropdownMenuDefaults.TrailingIcon(expanded = effectiveExpanded)
       },
       colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
       modifier = Modifier
@@ -203,7 +215,7 @@ fun CategoryDropdown(
     )
 
     ExposedDropdownMenu(
-      expanded = expanded,
+      expanded = effectiveExpanded,
       onDismissRequest = { expanded = false },
     ) {
       categoryNames.forEach { catName ->

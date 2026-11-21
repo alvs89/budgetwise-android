@@ -93,6 +93,7 @@ import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.ExportReportDialog
 import com.example.ui.components.FinancialChatSheet
 import com.example.ui.components.LaunchSplashOverlay
+import com.example.ui.components.LocalIsAppLocked
 import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.NotificationCenterSheet
 import com.example.ui.components.PinLockOverlay
@@ -100,6 +101,7 @@ import com.example.ui.components.TransactionEditorSheet
 import com.example.ui.screens.ActivityScreen
 import com.example.ui.screens.BudgetsScreen
 import com.example.ui.screens.GoalsScreen
+import com.example.ui.screens.HelpCenterScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.InsightsScreen
 import com.example.ui.screens.ManageCategoriesScreen
@@ -119,6 +121,7 @@ import java.io.File
 @Serializable object SettingsRoute
 @Serializable object ManageCategoriesRoute
 @Serializable object NotificationsSettingsRoute
+@Serializable object HelpCenterRoute
 
 private data class TopLevelDestination(
   val route: Any,
@@ -216,18 +219,31 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
           .background(MaterialTheme.colorScheme.background),
       ) {
         if (!uiState.isLoading) {
+          CompositionLocalProvider(LocalIsAppLocked provides isAppLocked) {
           val navController = rememberNavController()
           val backStackEntry by navController.currentBackStackEntryAsState()
           val currentDestination = backStackEntry?.destination
           val isSettingsRoute =
             currentDestination?.hasRoute<SettingsRoute>() == true ||
               currentDestination?.hasRoute<ManageCategoriesRoute>() == true ||
-              currentDestination?.hasRoute<NotificationsSettingsRoute>() == true
+              currentDestination?.hasRoute<NotificationsSettingsRoute>() == true ||
+              currentDestination?.hasRoute<HelpCenterRoute>() == true
 
     var showTransactionSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionEntity?>(null) }
     var pendingDeleteFromSheet by remember { mutableStateOf<TransactionEntity?>(null) }
     var showChatSheet by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(isAppLocked) {
+      if (isAppLocked) {
+        showExportDialog = false
+        showNotificationsSheet = false
+        showTransactionSheet = false
+        editingTransaction = null
+        pendingDeleteFromSheet = null
+        showChatSheet = false
+      }
+    }
 
     if (showExportDialog && !isAppLocked) {
       ExportReportDialog(
@@ -586,6 +602,7 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                 onLockAppNow = viewModel::lockAppNow,
                 onOpenManageCategories = { navController.navigate(ManageCategoriesRoute) },
                 onOpenNotificationsSettings = { navController.navigate(NotificationsSettingsRoute) },
+                onOpenHelpCenter = { navController.navigate(HelpCenterRoute) },
                 onExportData = { showExportDialog = true },
                 onResetDemoData = viewModel::resetDemonstrationData,
                 onClearAllData = viewModel::clearAllRecords,
@@ -611,10 +628,17 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                 onUpdateDailyReminderTime = viewModel::setDailyReminderTime,
               )
             }
+            composable<HelpCenterRoute> {
+              HelpCenterScreen(
+                onBack = { navController.popBackStack() },
+                onOpenAssistant = { showChatSheet = true },
+              )
+            }
           }
         }
         }
         }
+          }
         }
 
         TopFloatingToastBanner(

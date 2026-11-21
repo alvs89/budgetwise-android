@@ -121,6 +121,8 @@ fun FinancialChatSheet(
   onDeleteSession: (sessionId: Long) -> Unit,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var draftMessage by rememberSaveable { mutableStateOf("") }
   var editingMessageId by rememberSaveable { mutableStateOf<Long?>(null) }

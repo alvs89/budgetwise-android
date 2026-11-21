@@ -99,6 +99,8 @@ fun TransactionEditorSheet(
   onDelete: ((TransactionEntity) -> Unit)?,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var type by remember(existingTransaction) {
     mutableStateOf(existingTransaction?.type ?: TransactionType.EXPENSE)

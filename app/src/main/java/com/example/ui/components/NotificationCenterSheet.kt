@@ -80,6 +80,8 @@ fun NotificationCenterSheet(
   onOpenSettings: () -> Unit,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var alertPendingDelete by remember { mutableStateOf<FinancialAlertEntity?>(null) }
   var showClearAllConfirm by remember { mutableStateOf(false) }

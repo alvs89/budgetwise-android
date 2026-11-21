@@ -92,6 +92,7 @@ import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.MaskedCurrencyText
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StableFormDialog
+import com.example.ui.components.dismissIfAppLocked
 import com.example.ui.theme.LocalFinanceColors
 import com.example.ui.viewmodel.BudgetWiseUiState
 import java.math.BigDecimal
@@ -493,6 +494,8 @@ private fun GoalEditorDialog(
   onSave: (name: String, targetCentavos: Long, targetDateEpochDay: Long, status: GoalStatus) -> Unit,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
   var targetText by remember(existing) {
     mutableStateOf(
@@ -715,6 +718,8 @@ private fun GoalHistorySheet(
   currencyCode: String,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   val financeColors = LocalFinanceColors.current
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var expandedIds by remember(goal.goalId) { mutableStateOf(emptySet<Long>()) }

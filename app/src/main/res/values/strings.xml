@@ -67,4 +67,15 @@
     <string name="notification_clear_all_message_one">Remove 1 notification from your inbox? Your transactions, budgets, and savings goals will remain intact.</string>
     <string name="notification_clear_all_message_many">Remove all %1$d notifications from your inbox? Your transactions, budgets, and savings goals will remain intact.</string>
     <string name="notification_clear_all_confirm">Clear All</string>
+    <string name="help_center_title">Help &amp; FAQ</string>
+    <string name="help_center_subtitle">Guides, financial terms &amp; troubleshooting</string>
+    <string name="help_center_back_cd">Back to Settings</string>
+    <string name="help_search_placeholder">Search help topics (e.g., PIN, deficit, export)…</string>
+    <string name="help_search_clear_cd">Clear search</string>
+    <string name="help_empty_title">No matching help topics</string>
+    <string name="help_empty_message">Try searching for keywords like PIN, calculator, deficit, goals, or export.</string>
+    <string name="help_empty_reset_action">Reset Search</string>
+    <string name="help_assistant_title">Still have a question?</string>
+    <string name="help_assistant_subtitle">Ask the BudgetWise Assistant about your spending, budgets, or how to use the app.</string>
+    <string name="help_assistant_cta">Ask BudgetWise Assistant</string>
 </resources>

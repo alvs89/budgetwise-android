@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteForever
@@ -99,6 +100,7 @@ fun SettingsScreen(
   onLockAppNow: () -> Unit,
   onOpenManageCategories: () -> Unit,
   onOpenNotificationsSettings: () -> Unit,
+  onOpenHelpCenter: () -> Unit,
   onExportData: () -> Unit,
   onResetDemoData: () -> Unit,
   onClearAllData: () -> Unit,
@@ -496,6 +498,18 @@ fun SettingsScreen(
                 contentDescription = "Manage alerts and notifications",
                 onClick = onOpenNotificationsSettings,
                 testTag = "settings_alerts_navigation_row",
+              )
+              HorizontalDivider(
+                color = subtleDividerColor,
+                modifier = Modifier.padding(start = 66.dp, end = 16.dp),
+              )
+              SettingsNavigationRow(
+                icon = Icons.AutoMirrored.Rounded.HelpOutline,
+                title = stringResource(R.string.help_center_title),
+                subtitle = stringResource(R.string.help_center_subtitle),
+                contentDescription = "Open Help and FAQ",
+                onClick = onOpenHelpCenter,
+                testTag = "settings_help_center_row",
               )
             }
           }

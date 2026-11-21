@@ -87,6 +87,8 @@ fun ExportReportDialog(
   onRequestShare: (FinancialReportData, ExportFormat) -> Unit,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   var selectedFormat by remember { mutableStateOf(ExportFormat.CSV) }
   var selectedScope by remember { mutableStateOf(ExportScope.MONTH) }
   var targetMonth by remember(uiState.selectedMonth) { mutableStateOf(uiState.selectedMonth) }

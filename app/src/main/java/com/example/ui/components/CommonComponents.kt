@@ -59,6 +59,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,6 +102,30 @@ import com.example.ui.theme.LocalFinanceColors
 import java.math.BigDecimal
 
 val LocalIsBalanceHidden = staticCompositionLocalOf { false }
+
+/**
+ * Indicates whether the main app content is currently behind the PIN App Lock overlay.
+ *
+ * Provided as `true` for the main application subtree while locked, and left `false` for
+ * [PinLockOverlay] itself so Forgot PIN recovery dialogs continue working normally.
+ */
+val LocalIsAppLocked = compositionLocalOf { false }
+
+/**
+ * Dismisses a transient modal, bottom sheet, dialog, or popup whenever the app locks, and
+ * returns `true` while locked so callers skip composing separate Android Dialog/Popup windows
+ * that would otherwise float above [PinLockOverlay].
+ */
+@Composable
+fun dismissIfAppLocked(onDismiss: () -> Unit): Boolean {
+  val isAppLocked = LocalIsAppLocked.current
+  LaunchedEffect(isAppLocked) {
+    if (isAppLocked) {
+      onDismiss()
+    }
+  }
+  return isAppLocked
+}
 
 @Composable
 fun budgetWiseSwitchColors(): SwitchColors = SwitchDefaults.colors(
@@ -923,6 +949,8 @@ fun ConfirmationDialog(
   onConfirm: () -> Unit,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(title, style = MaterialTheme.typography.titleLarge) },
@@ -963,13 +991,20 @@ fun CurrencyDropdown(
   label: String? = null,
 ) {
   var expanded by remember { mutableStateOf(false) }
+  val isAppLocked = LocalIsAppLocked.current
+  LaunchedEffect(isAppLocked) {
+    if (isAppLocked && expanded) {
+      expanded = false
+    }
+  }
+  val effectiveExpanded = expanded && !isAppLocked
   val selectedOption = remember(selectedCurrencyCode) {
     CurrencyOption.fromCode(selectedCurrencyCode)
   }
 
   ExposedDropdownMenuBox(
-    expanded = expanded,
-    onExpandedChange = { expanded = !expanded },
+    expanded = effectiveExpanded,
+    onExpandedChange = { if (!isAppLocked) expanded = !expanded },
     modifier = modifier.fillMaxWidth(),
   ) {
     OutlinedTextField(
@@ -995,7 +1030,7 @@ fun CurrencyDropdown(
         }
       },
       trailingIcon = {
-        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+        ExposedDropdownMenuDefaults.TrailingIcon(expanded = effectiveExpanded)
       },
       colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
       modifier = Modifier
@@ -1005,7 +1040,7 @@ fun CurrencyDropdown(
     )
 
     ExposedDropdownMenu(
-      expanded = expanded,
+      expanded = effectiveExpanded,
       onDismissRequest = { expanded = false },
     ) {
       CurrencyOption.entries.forEach { option ->

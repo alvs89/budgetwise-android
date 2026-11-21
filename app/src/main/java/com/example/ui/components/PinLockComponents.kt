@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.content.Context
 import android.content.ContextWrapper
+import androidx.activity.compose.BackHandler
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.AnimatedVisibility
@@ -14,6 +15,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,7 +65,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -149,6 +153,8 @@ fun PinLockOverlay(
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
+  val focusManager = LocalFocusManager.current
+  val keyboardController = LocalSoftwareKeyboardController.current
   val financeColors = LocalFinanceColors.current
   val biometricAvailable = remember(context) { isBiometricAuthAvailable(context) }
   val canUseBiometric = biometricEnabled && biometricAvailable
@@ -162,10 +168,20 @@ fun PinLockOverlay(
   val shakeOffset = remember { Animatable(0f) }
   val scope = rememberCoroutineScope()
 
+  BackHandler(enabled = visible) {
+    if (showForgotPinDialog) {
+      showForgotPinDialog = false
+    } else {
+      context.findFragmentActivity()?.moveTaskToBack(true)
+    }
+  }
+
   LaunchedEffect(visible) {
     if (!visible) {
       biometricTriggeredThisLock = false
     } else {
+      focusManager.clearFocus(force = true)
+      keyboardController?.hide()
       enteredPin = ""
       errorMessage = null
       showForgotPinDialog = false
@@ -248,6 +264,11 @@ fun PinLockOverlay(
       modifier = Modifier
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.background)
+        .clickable(
+          interactionSource = remember { MutableInteractionSource() },
+          indication = null,
+          onClick = {},
+        )
         .safeDrawingPadding()
         .testTag("pin_lock_overlay"),
       contentAlignment = Alignment.Center,
@@ -614,6 +635,8 @@ fun PinSetupOrVerifyDialog(
   onDisableAppLock: () -> Unit,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   val context = LocalContext.current
   val deviceRecoveryAvailable = remember(context) { isDeviceCredentialRecoveryAvailable(context) }
 

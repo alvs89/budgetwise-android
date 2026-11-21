@@ -162,6 +162,8 @@ fun CategoryPickerBottomSheet(
   onSelect: (categoryName: String, type: TransactionType) -> Unit,
   onDismiss: () -> Unit,
 ) {
+  if (dismissIfAppLocked(onDismiss)) return
+
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var currentType by remember(activeType) { mutableStateOf(activeType) }
 
