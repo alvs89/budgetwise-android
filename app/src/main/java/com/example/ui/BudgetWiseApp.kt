@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Activity
+import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.PieChart
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Savings
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -62,9 +64,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,6 +82,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -85,7 +90,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.R
+import com.example.data.cloud.GoogleAuthHelper
+import com.example.data.cloud.GoogleSignInResult
+import com.example.data.cloud.authStateFlow
+import com.example.data.cloud.getBudgetWiseFirestore
 import com.example.data.local.entity.TransactionEntity
+import com.example.data.preferences.UserPreferences
+import com.example.data.preferences.UserPreferencesRepository
 import com.example.domain.AlertDestination
 import com.example.domain.ExportFormat
 import com.example.domain.FinancialReportExporter
@@ -107,9 +118,16 @@ import com.example.ui.screens.InsightsScreen
 import com.example.ui.screens.ManageCategoriesScreen
 import com.example.ui.screens.NotificationsSettingsScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.SignInScreen
+import com.example.ui.screens.WelcomeGuideScreen
 import com.example.ui.theme.BudgetWiseTheme
 import com.example.ui.viewmodel.BudgetWiseViewModel
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import java.io.File
 
@@ -122,6 +140,7 @@ import java.io.File
 @Serializable object ManageCategoriesRoute
 @Serializable object NotificationsSettingsRoute
 @Serializable object HelpCenterRoute
+@Serializable object WelcomeGuideReplayRoute
 
 private data class TopLevelDestination(
   val route: Any,
@@ -139,8 +158,144 @@ private val TopLevelDestinations = listOf(
   TopLevelDestination(InsightsRoute, "Insights", Icons.Rounded.Insights, Icons.Outlined.Insights, "nav_insights"),
 )
 
+/**
+ * Auth-gated root entry point for BudgetWise.
+ *
+ * All Firestore reads/writes and user-scoped ViewModels are strictly scoped inside `key(user.uid)`
+ * behind Google Sign-In via Jetpack Credential Manager.
+ */
 @Composable
-fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
+fun BudgetWiseRoot(
+  foregroundEvents: Flow<Unit>,
+  backgroundEvents: Flow<Unit>,
+  pendingNotificationDeepLink: StateFlow<Pair<String, Long>?>,
+  onConsumeNotificationDeepLink: () -> Unit,
+) {
+  val context = LocalContext.current
+  val auth = remember { Firebase.auth }
+  val currentUser by remember(auth) { auth.authStateFlow() }
+    .collectAsStateWithLifecycle(initialValue = auth.currentUser)
+
+  val localPrefsRepo = remember(context) { UserPreferencesRepository(context.applicationContext) }
+  val localPrefs by localPrefsRepo.userPreferences.collectAsStateWithLifecycle(
+    initialValue = UserPreferences()
+  )
+
+  var showLaunchSplash by rememberSaveable { mutableStateOf(true) }
+  var dashboardRevealed by rememberSaveable { mutableStateOf(false) }
+
+  LaunchedEffect(Unit) {
+    if (showLaunchSplash) {
+      delay(2680L)
+      dashboardRevealed = true
+      showLaunchSplash = false
+    } else {
+      dashboardRevealed = true
+    }
+  }
+
+  var isSigningIn by remember { mutableStateOf(false) }
+  var signInError by remember { mutableStateOf<String?>(null) }
+  var attemptedAutoSignIn by rememberSaveable { mutableStateOf(false) }
+  val coroutineScope = rememberCoroutineScope()
+
+  LaunchedEffect(currentUser, attemptedAutoSignIn) {
+    if (currentUser == null && !attemptedAutoSignIn) {
+      attemptedAutoSignIn = true
+      val activityCtx = context.findActivity() ?: context
+      GoogleAuthHelper.attemptAutoSignIn(activityCtx, auth)
+    } else if (currentUser != null) {
+      isSigningIn = false
+      signInError = null
+    }
+  }
+
+  Box(modifier = Modifier.fillMaxSize()) {
+    val activeUser = currentUser
+    if (activeUser == null) {
+      BudgetWiseTheme(themeMode = localPrefs.themeMode) {
+        SignInScreen(
+          isSigningIn = isSigningIn,
+          errorMessage = signInError,
+          onSignInWithGoogle = {
+            if (isSigningIn) return@SignInScreen
+            isSigningIn = true
+            signInError = null
+            coroutineScope.launch {
+              val activityCtx = context.findActivity() ?: context
+              when (val result = GoogleAuthHelper.onGoogleSignInClicked(activityCtx, auth)) {
+                is GoogleSignInResult.Success -> {
+                  isSigningIn = false
+                  signInError = null
+                }
+                GoogleSignInResult.Cancelled -> {
+                  isSigningIn = false
+                }
+                is GoogleSignInResult.Failure -> {
+                  isSigningIn = false
+                  signInError = result.message
+                }
+              }
+            }
+          },
+        )
+      }
+    } else {
+      key(activeUser.uid) {
+        val application = context.applicationContext as Application
+        val firestore = remember(context) { getBudgetWiseFirestore(context.applicationContext) }
+        val scopedViewModel: BudgetWiseViewModel = viewModel(
+          key = activeUser.uid,
+          factory = BudgetWiseViewModel.provideFactory(
+            application = application,
+            firestore = firestore,
+            userId = activeUser.uid,
+            accountDisplayName = activeUser.displayName,
+            accountEmail = activeUser.email,
+          ),
+        )
+
+        LaunchedEffect(scopedViewModel) {
+          foregroundEvents.collect { scopedViewModel.onAppReturnedToForeground() }
+        }
+        LaunchedEffect(scopedViewModel) {
+          backgroundEvents.collect { scopedViewModel.onAppMovedToBackground() }
+        }
+        val pendingDeepLink by pendingNotificationDeepLink.collectAsStateWithLifecycle()
+        LaunchedEffect(scopedViewModel, pendingDeepLink) {
+          val deepLink = pendingDeepLink ?: return@LaunchedEffect
+          scopedViewModel.handleNotificationDeepLink(deepLink.first, deepLink.second)
+          onConsumeNotificationDeepLink()
+        }
+
+        BudgetWiseApp(
+          viewModel = scopedViewModel,
+          externalSplashActive = showLaunchSplash,
+          externalDashboardRevealed = dashboardRevealed,
+          onSignOut = {
+            coroutineScope.launch {
+              GoogleAuthHelper.signOut(
+                context = context,
+                auth = auth,
+                onBeforeSignOut = { scopedViewModel.prepareForSignOut() },
+              )
+            }
+          },
+        )
+      }
+    }
+
+    LaunchSplashOverlay(visible = showLaunchSplash)
+  }
+}
+
+@Composable
+fun BudgetWiseApp(
+  viewModel: BudgetWiseViewModel,
+  externalSplashActive: Boolean? = null,
+  externalDashboardRevealed: Boolean? = null,
+  onSignOut: () -> Unit = {},
+) {
   val context = LocalContext.current
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val isAppLocked by viewModel.isAppLocked.collectAsStateWithLifecycle()
@@ -195,19 +350,24 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
     }
   }
 
-  var showLaunchSplash by rememberSaveable { mutableStateOf(true) }
-  var dashboardRevealed by rememberSaveable { mutableStateOf(false) }
+  var internalShowLaunchSplash by rememberSaveable { mutableStateOf(externalSplashActive == null) }
+  var internalDashboardRevealed by rememberSaveable { mutableStateOf(externalDashboardRevealed != null) }
   var hasPlayedDashboardEntrance by rememberSaveable { mutableStateOf(false) }
 
-  LaunchedEffect(Unit) {
-    if (showLaunchSplash) {
-      delay(2680L)
-      dashboardRevealed = true
-      showLaunchSplash = false
-    } else {
-      dashboardRevealed = true
+  if (externalSplashActive == null) {
+    LaunchedEffect(Unit) {
+      if (internalShowLaunchSplash) {
+        delay(2680L)
+        internalDashboardRevealed = true
+        internalShowLaunchSplash = false
+      } else {
+        internalDashboardRevealed = true
+      }
     }
   }
+
+  val showLaunchSplash = externalSplashActive ?: internalShowLaunchSplash
+  val dashboardRevealed = externalDashboardRevealed ?: internalDashboardRevealed
 
   BudgetWiseTheme(themeMode = uiState.preferences.themeMode) {
     CompositionLocalProvider(
@@ -218,7 +378,32 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
           .fillMaxSize()
           .background(MaterialTheme.colorScheme.background),
       ) {
-        if (!uiState.isLoading) {
+        if (uiState.isLoading) {
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .testTag("cloud_profile_loading"),
+            contentAlignment = Alignment.Center,
+          ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+          }
+        } else if (!uiState.preferences.onboardingCompleted) {
+          WelcomeGuideScreen(
+            isReplayMode = false,
+            initialDisplayName = uiState.preferences.displayName,
+            initialCurrencyCode = uiState.preferences.preferredCurrency,
+            isSubmitting = uiState.isCompletingOnboarding,
+            errorMessage = uiState.cloudErrorMessage,
+            onComplete = { displayName, currencyCode, loadDemoData ->
+              viewModel.completeOnboarding(
+                displayName = displayName,
+                currencyCode = currencyCode,
+                loadDemoData = loadDemoData,
+              )
+            },
+            onSkip = viewModel::skipOnboarding,
+          )
+        } else {
           CompositionLocalProvider(LocalIsAppLocked provides isAppLocked) {
           val navController = rememberNavController()
           val backStackEntry by navController.currentBackStackEntryAsState()
@@ -227,7 +412,8 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
             currentDestination?.hasRoute<SettingsRoute>() == true ||
               currentDestination?.hasRoute<ManageCategoriesRoute>() == true ||
               currentDestination?.hasRoute<NotificationsSettingsRoute>() == true ||
-              currentDestination?.hasRoute<HelpCenterRoute>() == true
+              currentDestination?.hasRoute<HelpCenterRoute>() == true ||
+              currentDestination?.hasRoute<WelcomeGuideReplayRoute>() == true
 
     var showTransactionSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionEntity?>(null) }
@@ -606,6 +792,7 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
                 onExportData = { showExportDialog = true },
                 onResetDemoData = viewModel::resetDemonstrationData,
                 onClearAllData = viewModel::clearAllRecords,
+                onSignOut = onSignOut,
               )
             }
             composable<ManageCategoriesRoute> {
@@ -632,6 +819,13 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
               HelpCenterScreen(
                 onBack = { navController.popBackStack() },
                 onOpenAssistant = { showChatSheet = true },
+                onReplayWelcomeGuide = { navController.navigate(WelcomeGuideReplayRoute) },
+              )
+            }
+            composable<WelcomeGuideReplayRoute> {
+              WelcomeGuideScreen(
+                isReplayMode = true,
+                onFinishReplay = { navController.popBackStack() },
               )
             }
           }
@@ -652,7 +846,7 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
         )
 
         PinLockOverlay(
-          visible = !uiState.isLoading && isAppLocked,
+          visible = !uiState.isLoading && uiState.preferences.onboardingCompleted && isAppLocked,
           splashActive = showLaunchSplash,
           biometricEnabled = uiState.preferences.biometricUnlockEnabled,
           failedAttempts = uiState.preferences.failedPinAttempts,
@@ -664,9 +858,11 @@ fun BudgetWiseApp(viewModel: BudgetWiseViewModel) {
           onFactoryResetForForgottenPin = viewModel::factoryResetForForgottenPin,
         )
 
-        LaunchSplashOverlay(
-          visible = showLaunchSplash,
-        )
+        if (externalSplashActive == null) {
+          LaunchSplashOverlay(
+            visible = showLaunchSplash,
+          )
+        }
       }
     }
   }

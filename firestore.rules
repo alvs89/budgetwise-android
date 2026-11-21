@@ -1,0 +1,263 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Global Auth & Validation Helpers
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function isValidCurrency(code) {
+      return code is string && code in [
+        'PHP', 'USD', 'KRW', 'JPY', 'EUR', 'GBP', 'SGD', 'AUD', 'CAD',
+        'CNY', 'HKD', 'TWD', 'THB', 'MYR', 'IDR', 'VND', 'INR', 'CHF'
+      ];
+    }
+
+    function isValidTransactionType(t) {
+      return t is string && t in ['INCOME', 'EXPENSE'];
+    }
+
+    function isValidPaymentMethod(p) {
+      return p is string && p in ['CASH', 'GCASH', 'MAYA', 'DEBIT_CARD', 'CREDIT_CARD', 'BANK_TRANSFER'];
+    }
+
+    function isValidGoalStatus(s) {
+      return s is string && s in ['ACTIVE', 'COMPLETED', 'PAUSED'];
+    }
+
+    // -------------------------------------------------------------------------
+    // Schema Validators
+    // -------------------------------------------------------------------------
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasOnly([
+        'userId', 'displayName', 'preferredCurrency',
+        'onboardingCompleted', 'initializedData', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasAll([
+        'userId', 'displayName', 'preferredCurrency',
+        'onboardingCompleted', 'initializedData', 'createdAt', 'updatedAt'
+      ])
+      && data.userId == userId
+      && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60
+      && isValidCurrency(data.preferredCurrency)
+      && data.onboardingCompleted is bool
+      && data.initializedData is bool
+      && data.createdAt is timestamp && data.createdAt <= request.time
+      && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTransaction(data, userId) {
+      return data.keys().hasOnly([
+        'userId', 'title', 'amountCentavos', 'type', 'category',
+        'dateEpochDay', 'paymentMethod', 'notes', 'sampleData', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasAll([
+        'userId', 'title', 'amountCentavos', 'type', 'category',
+        'dateEpochDay', 'paymentMethod', 'notes', 'sampleData', 'createdAt', 'updatedAt'
+      ])
+      && data.userId == userId
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+      && data.amountCentavos is int && data.amountCentavos > 0 && data.amountCentavos <= 999999999999
+      && isValidTransactionType(data.type)
+      && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+      && data.dateEpochDay is int && data.dateEpochDay >= -36500 && data.dateEpochDay <= 100000
+      && isValidPaymentMethod(data.paymentMethod)
+      && data.notes is string && data.notes.size() <= 500
+      && data.sampleData is bool
+      && data.createdAt is timestamp && data.createdAt <= request.time
+      && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidBudget(data, userId) {
+      return data.keys().hasOnly([
+        'userId', 'category', 'limitCentavos', 'year', 'month',
+        'sampleData', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasAll([
+        'userId', 'category', 'limitCentavos', 'year', 'month',
+        'sampleData', 'createdAt', 'updatedAt'
+      ])
+      && data.userId == userId
+      && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+      && data.limitCentavos is int && data.limitCentavos > 0 && data.limitCentavos <= 999999999999
+      && data.year is int && data.year >= 2000 && data.year <= 2100
+      && data.month is int && data.month >= 1 && data.month <= 12
+      && data.sampleData is bool
+      && data.createdAt is timestamp && data.createdAt <= request.time
+      && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidGoal(data, userId) {
+      return data.keys().hasOnly([
+        'userId', 'name', 'targetCentavos', 'currentSavedCentavos',
+        'targetDateEpochDay', 'createdDateEpochDay', 'status',
+        'sampleData', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasAll([
+        'userId', 'name', 'targetCentavos', 'currentSavedCentavos',
+        'targetDateEpochDay', 'createdDateEpochDay', 'status',
+        'sampleData', 'createdAt', 'updatedAt'
+      ])
+      && data.userId == userId
+      && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+      && data.targetCentavos is int && data.targetCentavos > 0 && data.targetCentavos <= 999999999999
+      && data.currentSavedCentavos is int && data.currentSavedCentavos >= 0 && data.currentSavedCentavos <= 999999999999
+      && data.targetDateEpochDay is int && data.targetDateEpochDay >= -36500 && data.targetDateEpochDay <= 100000
+      && data.createdDateEpochDay is int && data.createdDateEpochDay >= -36500 && data.createdDateEpochDay <= 100000
+      && isValidGoalStatus(data.status)
+      && data.sampleData is bool
+      && data.createdAt is timestamp && data.createdAt <= request.time
+      && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidContribution(data, userId) {
+      return data.keys().hasOnly([
+        'userId', 'goalDocId', 'amountCentavos', 'withdrawal',
+        'note', 'dateEpochDay', 'createdAt'
+      ])
+      && data.keys().hasAll([
+        'userId', 'goalDocId', 'amountCentavos', 'withdrawal',
+        'note', 'dateEpochDay', 'createdAt'
+      ])
+      && data.userId == userId
+      && isValidId(data.goalDocId)
+      && data.amountCentavos is int && data.amountCentavos > 0 && data.amountCentavos <= 999999999999
+      && data.withdrawal is bool
+      && data.note is string && data.note.size() <= 300
+      && data.dateEpochDay is int && data.dateEpochDay >= -36500 && data.dateEpochDay <= 100000
+      && data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidCategory(data, userId) {
+      return data.keys().hasOnly([
+        'userId', 'name', 'type', 'iconKey', 'colorHex',
+        'defaultCategory', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasAll([
+        'userId', 'name', 'type', 'iconKey', 'colorHex',
+        'defaultCategory', 'createdAt', 'updatedAt'
+      ])
+      && data.userId == userId
+      && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+      && isValidTransactionType(data.type)
+      && data.iconKey is string && data.iconKey.size() >= 1 && data.iconKey.size() <= 60
+      && data.colorHex is int && data.colorHex >= 0 && data.colorHex <= 4294967295
+      && data.defaultCategory is bool
+      && data.createdAt is timestamp && data.createdAt <= request.time
+      && data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // -------------------------------------------------------------------------
+    // User Profile & Private Financial Subcollections
+    // -------------------------------------------------------------------------
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(request.resource.data, userId);
+      allow update: if isOwner(userId)
+        && isValidUserProfile(request.resource.data, userId)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'preferredCurrency', 'onboardingCompleted', 'initializedData', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId);
+
+      match /transactions/{transactionId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isValidId(transactionId)
+          && isValidTransaction(request.resource.data, userId);
+        allow update: if isOwner(userId)
+          && isValidTransaction(request.resource.data, userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'amountCentavos', 'type', 'category',
+            'dateEpochDay', 'paymentMethod', 'notes', 'sampleData', 'updatedAt'
+          ]);
+        allow delete: if isOwner(userId);
+      }
+
+      match /budgets/{budgetId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isValidId(budgetId)
+          && isValidBudget(request.resource.data, userId);
+        allow update: if isOwner(userId)
+          && isValidBudget(request.resource.data, userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'category', 'limitCentavos', 'year', 'month', 'sampleData', 'updatedAt'
+          ]);
+        allow delete: if isOwner(userId);
+      }
+
+      match /goals/{goalId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isValidId(goalId)
+          && isValidGoal(request.resource.data, userId);
+        allow update: if isOwner(userId)
+          && isValidGoal(request.resource.data, userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'targetCentavos', 'currentSavedCentavos',
+            'targetDateEpochDay', 'createdDateEpochDay', 'status', 'sampleData', 'updatedAt'
+          ]);
+        allow delete: if isOwner(userId);
+      }
+
+      match /contributions/{contributionId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isValidId(contributionId)
+          && isValidContribution(request.resource.data, userId);
+        allow update: if false;
+        allow delete: if isOwner(userId);
+      }
+
+      match /categories/{categoryId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && isValidId(categoryId)
+          && isValidCategory(request.resource.data, userId);
+        allow update: if isOwner(userId)
+          && isValidCategory(request.resource.data, userId)
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'iconKey', 'colorHex', 'updatedAt'
+          ]);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Explicit Deny-All Fallback
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

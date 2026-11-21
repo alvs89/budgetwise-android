@@ -1,0 +1,133 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Synced user profile and onboarding status stored per authenticated Google account.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "displayName": { "type": "string", "description": "User display name shown in greetings and settings." },
+        "preferredCurrency": {
+          "type": "string",
+          "enum": ["PHP", "USD", "KRW", "JPY", "EUR", "GBP", "SGD", "AUD", "CAD", "CNY", "HKD", "TWD", "THB", "MYR", "IDR", "VND", "INR", "CHF"],
+          "description": "ISO 4217 currency code."
+        },
+        "onboardingCompleted": { "type": "boolean", "description": "Whether the new-user Welcome Guide has been completed." },
+        "initializedData": { "type": "boolean", "description": "Whether default categories/starter data have been initialized." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of profile creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last profile update." }
+      },
+      "required": ["userId", "displayName", "preferredCurrency", "onboardingCompleted", "initializedData", "createdAt", "updatedAt"]
+    },
+    "TransactionRecord": {
+      "title": "TransactionRecord",
+      "description": "Income or expense transaction record in minor currency units (centavos).",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "amountCentavos": { "type": "integer" },
+        "type": { "type": "string", "enum": ["INCOME", "EXPENSE"] },
+        "category": { "type": "string" },
+        "dateEpochDay": { "type": "integer" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "GCASH", "MAYA", "DEBIT_CARD", "CREDIT_CARD", "BANK_TRANSFER"] },
+        "notes": { "type": "string" },
+        "sampleData": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "amountCentavos", "type", "category", "dateEpochDay", "paymentMethod", "notes", "sampleData", "createdAt", "updatedAt"]
+    },
+    "BudgetRecord": {
+      "title": "BudgetRecord",
+      "description": "Monthly category spending budget limit in centavos.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "category": { "type": "string" },
+        "limitCentavos": { "type": "integer" },
+        "year": { "type": "integer" },
+        "month": { "type": "integer" },
+        "sampleData": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "category", "limitCentavos", "year", "month", "sampleData", "createdAt", "updatedAt"]
+    },
+    "SavingsGoalRecord": {
+      "title": "SavingsGoalRecord",
+      "description": "Independent savings goal target and progress.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "targetCentavos": { "type": "integer" },
+        "currentSavedCentavos": { "type": "integer" },
+        "targetDateEpochDay": { "type": "integer" },
+        "createdDateEpochDay": { "type": "integer" },
+        "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED", "PAUSED"] },
+        "sampleData": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "targetCentavos", "currentSavedCentavos", "targetDateEpochDay", "createdDateEpochDay", "status", "sampleData", "createdAt", "updatedAt"]
+    },
+    "SavingsContributionRecord": {
+      "title": "SavingsContributionRecord",
+      "description": "Deposit or withdrawal entry linked to a savings goal document.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "goalDocId": { "type": "string" },
+        "amountCentavos": { "type": "integer" },
+        "withdrawal": { "type": "boolean" },
+        "note": { "type": "string" },
+        "dateEpochDay": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "goalDocId", "amountCentavos", "withdrawal", "note", "dateEpochDay", "createdAt"]
+    },
+    "CategoryRecord": {
+      "title": "CategoryRecord",
+      "description": "Income or expense financial category metadata.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["INCOME", "EXPENSE"] },
+        "iconKey": { "type": "string" },
+        "colorHex": { "type": "integer" },
+        "defaultCategory": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "type", "iconKey", "colorHex", "defaultCategory", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Per-user profile preferences (displayName, preferredCurrency, onboardingCompleted)."
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/TransactionRecord" },
+      "description": "User's private income and expense transactions."
+    },
+    "/users/{userId}/budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/BudgetRecord" },
+      "description": "User's monthly category budgets."
+    },
+    "/users/{userId}/goals/{goalId}": {
+      "schema": { "$ref": "#/entities/SavingsGoalRecord" },
+      "description": "User's independent savings goals."
+    },
+    "/users/{userId}/contributions/{contributionId}": {
+      "schema": { "$ref": "#/entities/SavingsContributionRecord" },
+      "description": "User's savings goal deposits and withdrawals."
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/CategoryRecord" },
+      "description": "User's default and custom financial categories."
+    }
+  }
+}

@@ -25,9 +25,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
+import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DeleteForever
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
@@ -73,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.cloud.CloudSyncStatus
 import com.example.domain.ThemeMode
 import com.example.domain.TransactionType
 import com.example.ui.components.ConfirmationDialog
@@ -104,6 +110,7 @@ fun SettingsScreen(
   onExportData: () -> Unit,
   onResetDemoData: () -> Unit,
   onClearAllData: () -> Unit,
+  onSignOut: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val biometricAvailable = remember(context) { isBiometricAuthAvailable(context) }
@@ -113,6 +120,7 @@ fun SettingsScreen(
   }
   var showResetConfirm by remember { mutableStateOf(false) }
   var showClearConfirm by remember { mutableStateOf(false) }
+  var showSignOutConfirm by remember { mutableStateOf(false) }
   var activePinDialogMode by remember { mutableStateOf<PinDialogMode?>(null) }
 
   if (showResetConfirm) {
@@ -132,13 +140,27 @@ fun SettingsScreen(
   if (showClearConfirm) {
     ConfirmationDialog(
       title = "Clear All Financial Records?",
-      message = "This permanently deletes all transactions, budgets, savings goals, and custom categories on this device. This cannot be undone.",
+      message = "This permanently deletes all transactions, budgets, savings goals, and custom categories in your BudgetWise account. This cannot be undone.",
       confirmLabel = "Clear All",
       onConfirm = {
         onClearAllData()
         showClearConfirm = false
       },
       onDismiss = { showClearConfirm = false },
+    )
+  }
+
+  if (showSignOutConfirm) {
+    ConfirmationDialog(
+      title = stringResource(R.string.settings_sign_out_confirm_title),
+      message = stringResource(R.string.settings_sign_out_confirm_message),
+      confirmLabel = stringResource(R.string.settings_sign_out_action),
+      isDestructive = false,
+      onConfirm = {
+        showSignOutConfirm = false
+        onSignOut()
+      },
+      onDismiss = { showSignOutConfirm = false },
     )
   }
 
@@ -231,7 +253,7 @@ fun SettingsScreen(
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
       ) {
-        // Card 1: Account & Preferences (Display Name + Preferred Currency)
+        // Card 1: Account & Preferences (Google Cloud Account + Display Name + Preferred Currency)
         item {
           SettingsGroupCard {
             SettingsCardHeader(
@@ -239,6 +261,19 @@ fun SettingsScreen(
               title = "Account & Preferences",
             )
             Spacer(modifier = Modifier.height(14.dp))
+
+            if (!uiState.accountEmail.isNullOrBlank()) {
+              CloudAccountBanner(
+                displayName = uiState.preferences.displayName,
+                email = uiState.accountEmail,
+                syncStatus = uiState.syncStatus,
+                onSignOutClick = { showSignOutConfirm = true },
+              )
+              HorizontalDivider(
+                modifier = Modifier.padding(vertical = 14.dp),
+                color = subtleDividerColor,
+              )
+            }
 
             // Display Name with label above so the Save CTA aligns flush with the text box body
             Text(
@@ -610,7 +645,7 @@ fun SettingsScreen(
               )
               Spacer(modifier = Modifier.width(6.dp))
               Text(
-                text = "Offline-First Private Storage",
+                text = stringResource(R.string.settings_footer_cloud_badge),
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
               )
@@ -736,5 +771,118 @@ private fun SettingsCardHeader(
       style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
       color = MaterialTheme.colorScheme.onSurface,
     )
+  }
+}
+
+@Composable
+private fun CloudAccountBanner(
+  displayName: String,
+  email: String,
+  syncStatus: CloudSyncStatus,
+  onSignOutClick: () -> Unit,
+) {
+  val initial = displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "B"
+  val (syncIcon, syncLabel, syncTint) = when (syncStatus) {
+    CloudSyncStatus.SYNCED -> Triple(
+      Icons.Rounded.CloudDone,
+      stringResource(R.string.settings_sync_status_synced),
+      MaterialTheme.colorScheme.primary,
+    )
+    CloudSyncStatus.SYNCING -> Triple(
+      Icons.Rounded.CloudSync,
+      stringResource(R.string.settings_sync_status_syncing),
+      MaterialTheme.colorScheme.primary,
+    )
+    CloudSyncStatus.OFFLINE -> Triple(
+      Icons.Rounded.CloudOff,
+      stringResource(R.string.settings_sync_status_offline),
+      MaterialTheme.colorScheme.tertiary,
+    )
+    CloudSyncStatus.ERROR -> Triple(
+      Icons.Rounded.ErrorOutline,
+      stringResource(R.string.settings_sync_status_error),
+      MaterialTheme.colorScheme.error,
+    )
+  }
+
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("settings_cloud_account_section"),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Box(
+        modifier = Modifier
+          .size(42.dp)
+          .clip(CircleShape)
+          .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = initial,
+          style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+          color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+      }
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        Text(
+          text = email,
+          style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.testTag("settings_account_email"),
+        )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
+          modifier = Modifier.testTag("settings_sync_status_badge"),
+        ) {
+          Icon(
+            imageVector = syncIcon,
+            contentDescription = null,
+            tint = syncTint,
+            modifier = Modifier.size(14.dp),
+          )
+          Text(
+            text = syncLabel,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+            color = syncTint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+      }
+      OutlinedButton(
+        onClick = onSignOutClick,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        modifier = Modifier
+          .heightIn(min = 44.dp)
+          .testTag("settings_sign_out_button"),
+      ) {
+        Icon(
+          imageVector = Icons.AutoMirrored.Rounded.Logout,
+          contentDescription = null,
+          modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+          text = stringResource(R.string.settings_sign_out_action),
+          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+          maxLines = 1,
+          softWrap = false,
+        )
+      }
+    }
   }
 }

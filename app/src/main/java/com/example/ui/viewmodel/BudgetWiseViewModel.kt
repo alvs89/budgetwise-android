@@ -4,9 +4,14 @@ import android.app.Application
 import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.ai.FinancialChatService
 import com.example.ai.GeminiFinancialChatService
+import com.example.data.cloud.CloudProfileState
+import com.example.data.cloud.CloudSyncStatus
+import com.example.data.cloud.FirestoreSyncRepository
 import com.example.data.local.BudgetWiseDatabase
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
@@ -19,6 +24,7 @@ import com.example.data.local.entity.TransactionEntity
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.repository.BudgetWiseRepository
+import com.google.firebase.firestore.FirebaseFirestore
 import com.example.domain.AlertDestination
 import com.example.domain.AlertThresholdDefaults
 import com.example.domain.BudgetSummary
@@ -61,6 +67,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -143,6 +150,10 @@ data class BudgetWiseUiState(
   val categories: List<CategoryEntity> = emptyList(),
   val financialAlerts: List<FinancialAlertEntity> = emptyList(),
   val unreadAlertCount: Int = 0,
+  val syncStatus: CloudSyncStatus = CloudSyncStatus.SYNCED,
+  val accountEmail: String? = null,
+  val isCompletingOnboarding: Boolean = false,
+  val cloudErrorMessage: String? = null,
 )
 
 private data class CoreInputs(
@@ -161,6 +172,13 @@ private data class SecondaryInputs(
   val alerts: List<FinancialAlertEntity>,
 )
 
+private data class CloudMetaInputs(
+  val profileState: CloudProfileState,
+  val syncStatus: CloudSyncStatus,
+  val isCompletingOnboarding: Boolean,
+  val cloudErrorMessage: String?,
+)
+
 /**
  * Primary MVVM state holder for BudgetWise.
  *
@@ -171,15 +189,28 @@ private data class SecondaryInputs(
 class BudgetWiseViewModel @JvmOverloads constructor(
   application: Application,
   private val geminiChatService: FinancialChatService = GeminiFinancialChatService(),
+  private val cloudRepository: FirestoreSyncRepository? = null,
+  private val accountDisplayName: String? = null,
+  private val accountEmail: String? = null,
 ) : AndroidViewModel(application) {
 
   private val preferencesRepository = UserPreferencesRepository(application)
   private val database = BudgetWiseDatabase.getInstance(application)
   private val repository = BudgetWiseRepository(database, preferencesRepository)
 
+  private val transactionsSourceFlow = cloudRepository?.transactions ?: repository.transactions
+  private val budgetsSourceFlow = cloudRepository?.budgets ?: repository.budgets
+  private val goalsSourceFlow = cloudRepository?.savingsGoals ?: repository.savingsGoals
+  private val contributionsSourceFlow = cloudRepository?.savingsContributions ?: repository.savingsContributions
+  private val categoriesSourceFlow = cloudRepository?.categories ?: repository.categories
+  private val profileSourceFlow = cloudRepository?.profileState ?: flowOf(CloudProfileState.Missing)
+  private val syncStatusSourceFlow = cloudRepository?.syncStatus ?: flowOf(CloudSyncStatus.SYNCED)
+
   private val selectedMonthFlow = MutableStateFlow(YearMonthKey.current())
   private val activityFilterFlow = MutableStateFlow(ActivityFilterState())
   private val homePeriodScopeFlow = MutableStateFlow(HomePeriodScope.THIS_MONTH)
+  private val isCompletingOnboardingFlow = MutableStateFlow(false)
+  private val cloudErrorMessageFlow = MutableStateFlow<String?>(null)
 
   private val _snackbarMessages = MutableSharedFlow<String>(extraBufferCapacity = 8)
   val snackbarMessages: SharedFlow<String> = _snackbarMessages.asSharedFlow()
@@ -210,7 +241,21 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (initialPrefs.appLockEnabled && !initialPrefs.pinHashRecord.isNullOrBlank()) {
         _isAppLocked.value = true
       }
-      repository.ensureInitialDataSeeded()
+      if (cloudRepository != null) {
+        val seedName = accountDisplayName?.trim()?.takeIf { it.isNotBlank() }
+          ?: initialPrefs.displayName
+        cloudRepository.ensureProfileInitialized(
+          defaultDisplayName = seedName,
+          defaultCurrency = initialPrefs.preferredCurrency,
+        ).onSuccess { profile ->
+          preferencesRepository.updateDisplayName(profile.displayName)
+          preferencesRepository.updatePreferredCurrency(profile.preferredCurrency)
+        }.onFailure { err ->
+          cloudErrorMessageFlow.value = err.localizedMessage ?: "Unable to initialize cloud account."
+        }
+      } else {
+        repository.ensureInitialDataSeeded()
+      }
       syncDailyReminderSchedule(initialPrefs)
       evaluateActiveAlertsOnStartup(initialPrefs)
     }
@@ -219,16 +264,16 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private val coreInputsFlow = combine(
     preferencesRepository.userPreferences,
     selectedMonthFlow,
-    repository.transactions,
-    repository.budgets,
-    repository.savingsGoals,
+    transactionsSourceFlow,
+    budgetsSourceFlow,
+    goalsSourceFlow,
   ) { prefs, month, transactions, budgets, goals ->
     CoreInputs(prefs, month, transactions, budgets, goals)
   }
 
   private val secondaryInputsFlow = combine(
-    repository.savingsContributions,
-    repository.categories,
+    contributionsSourceFlow,
+    categoriesSourceFlow,
     activityFilterFlow,
     homePeriodScopeFlow,
     repository.financialAlerts,
@@ -236,10 +281,34 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     SecondaryInputs(contributions, categories, filter, homeScope, alerts)
   }
 
+  private val cloudMetaInputsFlow = combine(
+    profileSourceFlow,
+    syncStatusSourceFlow,
+    isCompletingOnboardingFlow,
+    cloudErrorMessageFlow,
+  ) { profileState, syncStatus, isCompleting, cloudError ->
+    CloudMetaInputs(profileState, syncStatus, isCompleting, cloudError)
+  }
+
   val uiState: StateFlow<BudgetWiseUiState> = combine(
     coreInputsFlow,
     secondaryInputsFlow,
-  ) { core, secondary ->
+    cloudMetaInputsFlow,
+  ) { core, secondary, cloudMeta ->
+    val isCloudProfileLoading = cloudRepository != null &&
+      (cloudMeta.profileState is CloudProfileState.Loading || cloudMeta.profileState is CloudProfileState.Missing)
+    val effectivePrefs = when (val ps = cloudMeta.profileState) {
+      is CloudProfileState.Loaded -> core.prefs.copy(
+        displayName = ps.profile.displayName,
+        preferredCurrency = ps.profile.preferredCurrency,
+        onboardingCompleted = ps.profile.onboardingCompleted,
+      )
+      else -> if (cloudRepository != null && !accountDisplayName.isNullOrBlank()) {
+        core.prefs.copy(displayName = accountDisplayName.trim())
+      } else {
+        core.prefs
+      }
+    }
     val month = core.selectedMonth
     val transactions = core.transactions
     val monthTransactions = FinanceCalculator.filterTransactionsByMonth(transactions, month)
@@ -266,8 +335,8 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       budgetSummaries = budgetSummaries,
       breakdown = breakdown,
       selectedMonth = month,
-      currencyCode = core.prefs.preferredCurrency,
-      maskAmounts = core.prefs.isBalanceHidden,
+      currencyCode = effectivePrefs.preferredCurrency,
+      maskAmounts = effectivePrefs.isBalanceHidden,
     )
     val filteredActivity = applyActivityFilter(
       transactions = transactions,
@@ -275,9 +344,12 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       filter = secondary.activityFilter,
     )
 
+    val resolvedCloudError = cloudMeta.cloudErrorMessage
+      ?: (cloudMeta.profileState as? CloudProfileState.Error)?.message
+
     BudgetWiseUiState(
-      isLoading = false,
-      preferences = core.prefs,
+      isLoading = isCloudProfileLoading,
+      preferences = effectivePrefs,
       selectedMonth = month,
       homePeriodScope = secondary.homePeriodScope,
       allTransactions = transactions,
@@ -309,6 +381,10 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       categories = secondary.categories,
       financialAlerts = secondary.alerts,
       unreadAlertCount = secondary.alerts.count { !it.isRead },
+      syncStatus = cloudMeta.syncStatus,
+      accountEmail = accountEmail,
+      isCompletingOnboarding = cloudMeta.isCompletingOnboarding,
+      cloudErrorMessage = resolvedCloudError,
     )
   }.stateIn(
     scope = viewModelScope,
@@ -496,7 +572,15 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         createdAtMillis = existingCreatedAt ?: System.currentTimeMillis(),
         isSampleData = false,
       )
-      repository.saveTransaction(entity)
+      if (cloudRepository != null) {
+        val result = cloudRepository.saveTransaction(entity)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to sync transaction. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.saveTransaction(entity)
+      }
       val txMonth = YearMonthKey.fromEpochDay(dateEpochDay)
       selectedMonthFlow.value = txMonth
       _snackbarMessages.tryEmit(
@@ -514,7 +598,15 @@ class BudgetWiseViewModel @JvmOverloads constructor(
 
   fun deleteTransaction(transaction: TransactionEntity) {
     viewModelScope.launch {
-      repository.deleteTransaction(transaction)
+      if (cloudRepository != null) {
+        val result = cloudRepository.deleteTransaction(transaction)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to delete transaction. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.deleteTransaction(transaction)
+      }
       _snackbarMessages.tryEmit("Transaction deleted")
       if (transaction.type == TransactionType.EXPENSE) {
         evaluateBudgetThresholdForCategory(
@@ -534,16 +626,24 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     yearMonth: YearMonthKey,
   ) {
     viewModelScope.launch {
-      val created = repository.saveBudget(
-        BudgetEntity(
-          id = existingId,
-          category = category,
-          limitCentavos = limitCentavos,
-          year = yearMonth.year,
-          month = yearMonth.month,
-          isSampleData = false,
-        )
+      val budgetEntity = BudgetEntity(
+        id = existingId,
+        category = category,
+        limitCentavos = limitCentavos,
+        year = yearMonth.year,
+        month = yearMonth.month,
+        isSampleData = false,
       )
+      val created = if (cloudRepository != null) {
+        val result = cloudRepository.saveBudget(budgetEntity)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to sync budget. Please try again.")
+          return@launch
+        }
+        result.getOrDefault(false)
+      } else {
+        repository.saveBudget(budgetEntity)
+      }
       _snackbarMessages.tryEmit(
         if (created) "Budget created for $category" else "Budget updated for $category"
       )
@@ -557,16 +657,23 @@ class BudgetWiseViewModel @JvmOverloads constructor(
 
   fun deleteBudget(summary: BudgetSummary) {
     viewModelScope.launch {
-      repository.deleteBudget(
-        BudgetEntity(
-          id = summary.budgetId,
-          category = summary.category,
-          limitCentavos = FinanceCalculator.bigDecimalToCentavos(summary.limitAmount),
-          year = summary.yearMonth.year,
-          month = summary.yearMonth.month,
-          isSampleData = summary.isSampleData,
-        )
+      val budgetEntity = BudgetEntity(
+        id = summary.budgetId,
+        category = summary.category,
+        limitCentavos = FinanceCalculator.bigDecimalToCentavos(summary.limitAmount),
+        year = summary.yearMonth.year,
+        month = summary.yearMonth.month,
+        isSampleData = summary.isSampleData,
       )
+      if (cloudRepository != null) {
+        val result = cloudRepository.deleteBudget(budgetEntity)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to delete budget. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.deleteBudget(budgetEntity)
+      }
       repository.clearAlertDedupePrefix(
         FinancialAlertEvaluator.budgetDedupePrefix(summary.category, summary.yearMonth)
       )
@@ -600,7 +707,15 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         status = computedStatus,
         isSampleData = false,
       )
-      repository.saveGoal(entity)
+      if (cloudRepository != null) {
+        val result = cloudRepository.saveGoal(entity)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to sync savings goal. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.saveGoal(entity)
+      }
       _snackbarMessages.tryEmit(if (existing == null) "Savings goal created" else "Savings goal updated")
       evaluateUpcomingGoalDeadlines(dispatchSystemNotification = true)
     }
@@ -608,7 +723,15 @@ class BudgetWiseViewModel @JvmOverloads constructor(
 
   fun deleteGoal(goal: SavingsGoalEntity) {
     viewModelScope.launch {
-      repository.deleteGoal(goal)
+      if (cloudRepository != null) {
+        val result = cloudRepository.deleteGoal(goal)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to delete savings goal. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.deleteGoal(goal)
+      }
       _snackbarMessages.tryEmit("Savings goal deleted")
     }
   }
@@ -621,35 +744,47 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     dateEpochDay: Long,
   ) {
     viewModelScope.launch {
-      val previousGoal = repository.savingsGoals.first().firstOrNull { it.id == goalId }
-      repository.recordGoalContribution(
-        goalId = goalId,
-        amountCentavos = amountCentavos,
-        isWithdrawal = isWithdrawal,
-        note = note.trim(),
-        dateEpochDay = dateEpochDay,
-      )
+      val previousGoal = goalsSourceFlow.first().firstOrNull { it.id == goalId }
+      if (cloudRepository != null) {
+        val result = cloudRepository.recordGoalContribution(
+          goalId = goalId,
+          amountCentavos = amountCentavos,
+          isWithdrawal = isWithdrawal,
+          note = note.trim(),
+          dateEpochDay = dateEpochDay,
+        )
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to record contribution. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.recordGoalContribution(
+          goalId = goalId,
+          amountCentavos = amountCentavos,
+          isWithdrawal = isWithdrawal,
+          note = note.trim(),
+          dateEpochDay = dateEpochDay,
+        )
+      }
       _snackbarMessages.tryEmit(
         if (isWithdrawal) "Savings adjustment recorded" else "Contribution added to goal"
       )
       if (!isWithdrawal && previousGoal != null) {
-        val prefs = preferencesRepository.userPreferences.first()
+        val prefs = uiState.value.preferences
         if (prefs.goalAlertsEnabled) {
-          val updatedGoal = repository.savingsGoals.first().firstOrNull { it.id == goalId }
-          if (updatedGoal != null) {
-            val milestoneAlert = FinancialAlertEvaluator.evaluateGoalMilestoneAlert(
-              goalId = updatedGoal.id,
-              goalName = updatedGoal.name,
-              previousSavedCentavos = previousGoal.currentSavedCentavos,
-              newSavedCentavos = updatedGoal.currentSavedCentavos,
-              targetCentavos = updatedGoal.targetCentavos,
-              currencyCode = prefs.preferredCurrency,
-            )
-            if (milestoneAlert != null) {
-              val persisted = repository.insertAlertIfNew(milestoneAlert)
-              if (persisted != null) {
-                BudgetWiseNotificationManager.postSystemNotification(getApplication(), persisted)
-              }
+          val updatedSaved = (previousGoal.currentSavedCentavos + amountCentavos).coerceAtLeast(0L)
+          val milestoneAlert = FinancialAlertEvaluator.evaluateGoalMilestoneAlert(
+            goalId = previousGoal.id,
+            goalName = previousGoal.name,
+            previousSavedCentavos = previousGoal.currentSavedCentavos,
+            newSavedCentavos = updatedSaved,
+            targetCentavos = previousGoal.targetCentavos,
+            currencyCode = prefs.preferredCurrency,
+          )
+          if (milestoneAlert != null) {
+            val persisted = repository.insertAlertIfNew(milestoneAlert)
+            if (persisted != null) {
+              BudgetWiseNotificationManager.postSystemNotification(getApplication(), persisted)
             }
           }
         }
@@ -682,15 +817,22 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         type = type,
         fallbackColor = inferredColorHex,
       )
-      repository.addCategory(
-        CategoryEntity(
-          name = cleanName,
-          type = type,
-          iconKey = finalIconKey,
-          colorHex = finalColorHex,
-          isDefault = false,
-        )
+      val entity = CategoryEntity(
+        name = cleanName,
+        type = type,
+        iconKey = finalIconKey,
+        colorHex = finalColorHex,
+        isDefault = false,
       )
+      if (cloudRepository != null) {
+        val result = cloudRepository.addCategory(entity)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to sync new category. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.addCategory(entity)
+      }
       _snackbarMessages.tryEmit("Category \"$cleanName\" added")
     }
   }
@@ -713,38 +855,91 @@ class BudgetWiseViewModel @JvmOverloads constructor(
           return@launch
         }
       }
-      repository.updateCategory(
-        existing = category,
-        newName = targetName,
-        newIconKey = newIconKey,
-        newColorHex = newColorHex,
-      )
+      if (cloudRepository != null) {
+        val result = cloudRepository.updateCategory(
+          existing = category,
+          newName = targetName,
+          newIconKey = newIconKey,
+          newColorHex = newColorHex,
+        )
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to update category. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.updateCategory(
+          existing = category,
+          newName = targetName,
+          newIconKey = newIconKey,
+          newColorHex = newColorHex,
+        )
+      }
       _snackbarMessages.tryEmit("Category updated")
     }
   }
 
   fun deleteCustomCategory(category: CategoryEntity) {
     viewModelScope.launch {
-      repository.deleteCategory(category)
+      if (cloudRepository != null) {
+        val result = cloudRepository.deleteCategory(category)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to remove category. Please try again.")
+          return@launch
+        }
+      } else {
+        repository.deleteCategory(category)
+      }
       _snackbarMessages.tryEmit("Category removed")
     }
   }
 
-  // Preferences & Data Management
-  fun completeOnboarding(displayName: String, currencyCode: String) {
+  // Preferences, Onboarding & Data Management
+  fun completeOnboarding(
+    displayName: String,
+    currencyCode: String,
+    loadDemoData: Boolean = false,
+  ) {
     viewModelScope.launch {
+      isCompletingOnboardingFlow.value = true
+      cloudErrorMessageFlow.value = null
+      if (cloudRepository != null) {
+        val result = cloudRepository.completeOnboarding(
+          displayName = displayName,
+          preferredCurrency = currencyCode,
+          loadDemoData = loadDemoData,
+        )
+        if (result.isFailure) {
+          cloudErrorMessageFlow.value =
+            result.exceptionOrNull()?.localizedMessage ?: "Unable to finish setup. Please try again."
+          isCompletingOnboardingFlow.value = false
+          return@launch
+        }
+      } else if (loadDemoData) {
+        repository.resetToDemonstrationData()
+      }
       preferencesRepository.completeOnboarding(displayName, currencyCode)
+      isCompletingOnboardingFlow.value = false
     }
   }
 
   fun skipOnboarding() {
-    viewModelScope.launch {
-      preferencesRepository.markOnboardingSkipped()
-    }
+    val currentPrefs = uiState.value.preferences
+    completeOnboarding(
+      displayName = currentPrefs.displayName,
+      currencyCode = currentPrefs.preferredCurrency,
+      loadDemoData = false,
+    )
   }
 
   fun updateDisplayName(name: String) {
     viewModelScope.launch {
+      if (cloudRepository != null) {
+        val result = cloudRepository.updateDisplayName(name)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to sync display name. Please try again.")
+          return@launch
+        }
+      }
       preferencesRepository.updateDisplayName(name)
       _snackbarMessages.tryEmit("Display name updated")
     }
@@ -752,6 +947,13 @@ class BudgetWiseViewModel @JvmOverloads constructor(
 
   fun updatePreferredCurrency(currencyCode: String) {
     viewModelScope.launch {
+      if (cloudRepository != null) {
+        val result = cloudRepository.updatePreferredCurrency(currencyCode)
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to sync currency. Please try again.")
+          return@launch
+        }
+      }
       preferencesRepository.updatePreferredCurrency(currencyCode)
       _snackbarMessages.tryEmit("Currency updated to $currencyCode")
     }
@@ -778,7 +980,16 @@ class BudgetWiseViewModel @JvmOverloads constructor(
 
   fun resetDemonstrationData() {
     viewModelScope.launch {
-      repository.resetToDemonstrationData()
+      if (cloudRepository != null) {
+        val result = cloudRepository.resetToDemonstrationData()
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to restore demonstration data. Please try again.")
+          return@launch
+        }
+        repository.clearAllAlerts()
+      } else {
+        repository.resetToDemonstrationData()
+      }
       selectedMonthFlow.value = YearMonthKey.current()
       _snackbarMessages.tryEmit("Demonstration dataset restored")
     }
@@ -786,9 +997,26 @@ class BudgetWiseViewModel @JvmOverloads constructor(
 
   fun clearAllRecords() {
     viewModelScope.launch {
-      repository.clearAllUserData()
+      if (cloudRepository != null) {
+        val result = cloudRepository.clearAllFinancialRecords()
+        if (result.isFailure) {
+          _snackbarMessages.tryEmit("Unable to clear financial records. Please try again.")
+          return@launch
+        }
+        repository.clearAllAlerts()
+        repository.clearChatHistory()
+      } else {
+        repository.clearAllUserData()
+      }
       _snackbarMessages.tryEmit("All financial records cleared")
     }
+  }
+
+  fun prepareForSignOut() {
+    activeChatJob?.cancel()
+    activeChatJob = null
+    chatStreamingStateFlow.value = ChatStreamingState.Idle
+    _isAppLocked.value = false
   }
 
   fun notifyUser(message: String) {
@@ -1474,10 +1702,10 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     dispatchSystemNotification: Boolean,
   ) {
     val currentMonth = YearMonthKey.current()
-    val budgets = repository.budgets.first()
+    val budgets = budgetsSourceFlow.first()
       .filter { it.year == currentMonth.year && it.month == currentMonth.month }
     if (budgets.isEmpty()) return
-    val transactions = repository.transactions.first()
+    val transactions = transactionsSourceFlow.first()
     val monthExpenses = FinanceCalculator.filterTransactionsByMonth(transactions, currentMonth)
       .filter { it.type == TransactionType.EXPENSE }
 
@@ -1507,17 +1735,17 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     yearMonth: YearMonthKey,
     dispatchSystemNotification: Boolean,
   ) {
-    val prefs = preferencesRepository.userPreferences.first()
+    val prefs = uiState.value.preferences
     if (!prefs.budgetAlertsEnabled) return
 
-    val budget = repository.budgets.first().firstOrNull {
+    val budget = budgetsSourceFlow.first().firstOrNull {
       it.year == yearMonth.year &&
         it.month == yearMonth.month &&
         it.category.equals(category, ignoreCase = true)
     } ?: return
 
     val monthExpenses = FinanceCalculator.filterTransactionsByMonth(
-      repository.transactions.first(),
+      transactionsSourceFlow.first(),
       yearMonth,
     ).filter {
       it.type == TransactionType.EXPENSE && it.category.equals(budget.category, ignoreCase = true)
@@ -1534,7 +1762,6 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     )
 
     if (candidate == null) {
-      // Spending dropped below warning threshold (e.g., raised budget or deleted/edited expense)
       repository.clearAlertDedupePrefix(
         FinancialAlertEvaluator.budgetDedupePrefix(budget.category, yearMonth)
       )
@@ -1548,9 +1775,9 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   }
 
   private suspend fun evaluateUpcomingGoalDeadlines(dispatchSystemNotification: Boolean) {
-    val prefs = preferencesRepository.userPreferences.first()
+    val prefs = uiState.value.preferences
     if (!prefs.goalAlertsEnabled) return
-    val goals = repository.savingsGoals.first()
+    val goals = goalsSourceFlow.first()
     val alerts = FinancialAlertEvaluator.evaluateGoalDeadlineAlerts(
       goals = goals,
       todayEpochDay = currentEpochDay(),
@@ -1564,8 +1791,27 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     }
   }
 
-  private companion object {
-    const val TAG = "BudgetWiseViewModel"
-    const val CHAT_RESPONSE_TIMEOUT_MILLIS = 60_000L
+  companion object {
+    private const val TAG = "BudgetWiseViewModel"
+    private const val CHAT_RESPONSE_TIMEOUT_MILLIS = 60_000L
+
+    fun provideFactory(
+      application: Application,
+      firestore: FirebaseFirestore,
+      userId: String,
+      accountDisplayName: String?,
+      accountEmail: String?,
+    ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+      @Suppress("UNCHECKED_CAST")
+      override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        val cloudRepo = FirestoreSyncRepository(db = firestore, userId = userId)
+        return BudgetWiseViewModel(
+          application = application,
+          cloudRepository = cloudRepo,
+          accountDisplayName = accountDisplayName,
+          accountEmail = accountEmail,
+        ) as T
+      }
+    }
   }
 }

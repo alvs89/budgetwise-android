@@ -33,7 +33,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
@@ -86,6 +88,7 @@ import com.example.ui.components.EmptyStatePanel
 fun HelpCenterScreen(
   onBack: () -> Unit,
   onOpenAssistant: () -> Unit,
+  onReplayWelcomeGuide: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val focusManager = LocalFocusManager.current
@@ -270,6 +273,71 @@ fun HelpCenterScreen(
                   .height(36.dp)
                   .testTag("help_topic_chip_${topic.name.lowercase()}"),
               )
+            }
+          }
+        }
+
+        // 2b. Replay Welcome Guide Quick Card (visible when browsing without an active search)
+        if (searchQuery.isBlank() && selectedTopic == HelpTopic.ALL) {
+          item(key = "help_replay_welcome_guide") {
+            Surface(
+              shape = RoundedCornerShape(16.dp),
+              color = MaterialTheme.colorScheme.surface,
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .clickable(onClick = onReplayWelcomeGuide)
+                .testTag("help_replay_welcome_guide_row"),
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .heightIn(min = 64.dp)
+                  .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+              ) {
+                Box(
+                  modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                  contentAlignment = Alignment.Center,
+                ) {
+                  Icon(
+                    imageVector = Icons.Rounded.Explore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                  )
+                }
+                Column(
+                  modifier = Modifier.weight(1f),
+                  verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                  Text(
+                    text = stringResource(R.string.help_replay_welcome_title),
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                  Text(
+                    text = stringResource(R.string.help_replay_welcome_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                }
+                Icon(
+                  imageVector = Icons.Rounded.ChevronRight,
+                  contentDescription = stringResource(R.string.help_replay_welcome_cd),
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.size(22.dp),
+                )
+              }
             }
           }
         }

@@ -10,8 +10,8 @@
     <string name="nav_settings">Settings</string>
     <string name="fab_add_transaction">Add Transaction</string>
     <string name="cash_flow_disclaimer">Net cash flow is a summary of recorded transactions, not a verified bank balance.</string>
-    <string name="privacy_notice">All financial records are stored securely and privately on your device. BudgetWise never requests bank credentials.</string>
-    <string name="app_info_footer">BudgetWise · Version 1.0 · Offline-First Storage</string>
+    <string name="privacy_notice">Your financial records sync privately to your Google account with offline access. BudgetWise never requests bank credentials, and your 4-Digit PIN stays strictly on this device.</string>
+    <string name="app_info_footer">BudgetWise · Version 1.0 · Private Cloud Sync</string>
     <string name="demo_badge">Demo</string>
     <string name="chat_fab_label">Open financial assistant chat</string>
     <string name="chat_title">BudgetWise Assistant</string>
@@ -45,9 +45,9 @@
     <string name="pin_recovery_device_auth_desc">Use your phone\'s fingerprint, face unlock, or screen lock to set a new PIN while keeping all financial records intact.</string>
     <string name="pin_recovery_device_auth_unavailable">No screen lock or biometric is set up on this device. Use the local reset option below if you cannot recall your PIN.</string>
     <string name="pin_recovery_wipe_title">Reset App &amp; Erase Local Data</string>
-    <string name="pin_recovery_wipe_desc">To protect your financial privacy, removing App Lock without verification permanently deletes all local transactions, budgets, savings goals, custom categories, and assistant chat history.</string>
+    <string name="pin_recovery_wipe_desc">To protect your financial privacy, removing App Lock without verification clears local cached data and assistant chat history on this phone.</string>
     <string name="pin_recovery_confirm_hint">Type RESET to confirm</string>
-    <string name="pin_recovery_confirm_action">Erase Data &amp; Remove PIN</string>
+    <string name="pin_recovery_confirm_action">Erase Local Data &amp; Remove PIN</string>
     <string name="pin_recovery_setup_tip">Tip: If you ever forget your PIN, you can reset it using your device screen lock or biometrics without losing data.</string>
     <string name="pin_keypad_cancel">Cancel</string>
     <string name="pin_recovery_turn_off_action">Turn Off App Lock</string>
@@ -70,12 +70,65 @@
     <string name="help_center_title">Help &amp; FAQ</string>
     <string name="help_center_subtitle">Guides, financial terms &amp; troubleshooting</string>
     <string name="help_center_back_cd">Back to Settings</string>
-    <string name="help_search_placeholder">Search help topics (e.g., PIN, deficit, export)…</string>
+    <string name="help_search_placeholder">Search help topics (e.g., PIN, sync, deficit)…</string>
     <string name="help_search_clear_cd">Clear search</string>
     <string name="help_empty_title">No matching help topics</string>
-    <string name="help_empty_message">Try searching for keywords like PIN, calculator, deficit, goals, or export.</string>
+    <string name="help_empty_message">Try searching for keywords like sync, PIN, calculator, deficit, goals, or export.</string>
     <string name="help_empty_reset_action">Reset Search</string>
     <string name="help_assistant_title">Still have a question?</string>
     <string name="help_assistant_subtitle">Ask the BudgetWise Assistant about your spending, budgets, or how to use the app.</string>
     <string name="help_assistant_cta">Ask BudgetWise Assistant</string>
+    <string name="help_replay_welcome_title">Replay Welcome Guide</string>
+    <string name="help_replay_welcome_subtitle">Revisit the quick tour of BudgetWise features</string>
+    <string name="help_replay_welcome_cd">Replay Welcome Guide</string>
+
+    <!-- Google Sign-In & Multi-Device Sync -->
+    <string name="sign_in_headline">Take control of your money, on every phone</string>
+    <string name="sign_in_subtitle">Sign in with Google to privately back up and sync your transactions, budgets, goals, and categories across devices.</string>
+    <string name="sign_in_cta_google">Continue with Google</string>
+    <string name="sign_in_loading">Signing in…</string>
+    <string name="sign_in_feature_sync_title">Multi-Device Cloud Sync</string>
+    <string name="sign_in_feature_sync_desc">Sign in on another phone and pick up right where you left off.</string>
+    <string name="sign_in_feature_offline_title">Works Offline Anytime</string>
+    <string name="sign_in_feature_offline_desc">Log expenses anywhere; changes sync automatically when back online.</string>
+    <string name="sign_in_feature_private_title">Private &amp; Bank-Free</string>
+    <string name="sign_in_feature_private_desc">Only your Google account can read your ledger. PIN lock stays on-device.</string>
+    <string name="sign_in_footer_note">BudgetWise never asks for bank passwords or card numbers.</string>
+
+    <!-- Settings Account & Sync -->
+    <string name="settings_cloud_account_title">Cloud Sync Account</string>
+    <string name="settings_sync_status_synced">Synced to Cloud</string>
+    <string name="settings_sync_status_syncing">Syncing…</string>
+    <string name="settings_sync_status_offline">Offline · Cached locally</string>
+    <string name="settings_sync_status_error">Sync needs attention</string>
+    <string name="settings_sign_out_action">Sign Out</string>
+    <string name="settings_sign_out_confirm_title">Sign Out of BudgetWise?</string>
+    <string name="settings_sign_out_confirm_message">Your synced financial records remain safely backed up to your Google account. You can sign back in on this phone or any other device anytime.</string>
+    <string name="settings_footer_cloud_badge">Private Cloud Sync · Offline Ready</string>
+
+    <!-- Multi-Step Welcome Guide -->
+    <string name="welcome_step_counter">Step %1$d of %2$d</string>
+    <string name="welcome_skip">Skip</string>
+    <string name="welcome_back">Back</string>
+    <string name="welcome_next">Next</string>
+    <string name="welcome_done">Done</string>
+    <string name="welcome_get_started">Get Started</string>
+    <string name="welcome_saving">Setting up your ledger…</string>
+    <string name="welcome_step1_title">Welcome to BudgetWise</string>
+    <string name="welcome_step1_body">Track every peso, dollar, or yen with complete clarity. Your transactions, budgets, goals, and categories sync privately across all your phones—and stay available offline.</string>
+    <string name="welcome_step2_title">Log Expenses in Seconds</string>
+    <string name="welcome_step2_body">Record Cash, GCash, Maya, and card payments across 30+ color-coded categories. Tap the built-in calculator icon inside any amount field to split bills or add up receipts on the spot.</string>
+    <string name="welcome_step3_title">Smart Budgets, Goals &amp; Insights</string>
+    <string name="welcome_step3_body">Set monthly category limits with early warning alerts, build independent Savings Goals without skewing cash flow, and explore visual charts or ask the BudgetWise Assistant.</string>
+    <string name="welcome_step4_title">Personalize Your Profile</string>
+    <string name="welcome_step4_body">Choose how BudgetWise greets you and pick your primary currency. Both sync automatically across your devices.</string>
+    <string name="welcome_step4_name_label">Display Name</string>
+    <string name="welcome_step4_name_placeholder">Enter your name</string>
+    <string name="welcome_step4_currency_label">Preferred Currency</string>
+    <string name="welcome_step5_title">Choose How to Start</string>
+    <string name="welcome_step5_body">Start with a clean slate or explore sample data first. You can reset or clear records anytime in Settings.</string>
+    <string name="welcome_option_fresh_title">Start Fresh</string>
+    <string name="welcome_option_fresh_desc">Clean ledger with 30 ready-to-use income &amp; expense categories. Best when you are ready to log real transactions right away.</string>
+    <string name="welcome_option_demo_title">Explore Demonstration Data</string>
+    <string name="welcome_option_demo_desc">Pre-load sample transactions, monthly budgets, and savings goals so you can test charts, alerts, and insights immediately.</string>
 </resources>

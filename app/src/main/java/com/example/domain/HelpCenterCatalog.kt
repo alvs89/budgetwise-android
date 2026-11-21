@@ -89,8 +89,15 @@ object HelpCenterCatalog {
       id = "data_storage_privacy",
       topic = HelpTopic.DATA_EXPORT,
       question = "Where is my financial data stored? Is it private?",
-      answer = "All of your transactions, budgets, savings goals, categories, and settings are stored locally and privately on your device. BudgetWise works offline-first, never asks for bank logins, and does not sync your ledger to external accounts. If you choose to chat with the optional BudgetWise Assistant, only a compact summary needed to answer your question is sent to generate a reply.",
-      keywords = listOf("offline", "local", "cloud", "upload", "server", "bank credentials", "assistant", "ai"),
+      answer = "Your transactions, budgets, savings goals, categories, display name, and currency are synced privately to your Google account so you can access BudgetWise across multiple phones, with automatic offline caching when you have no signal. Security rules restrict access strictly to your signed-in account. BudgetWise never requests bank credentials, and your 4-Digit PIN lock, theme, and notification schedules remain strictly local to each device.",
+      keywords = listOf("offline", "local", "cloud", "sync", "upload", "server", "bank credentials", "assistant", "ai", "devices"),
+    ),
+    HelpFaqItem(
+      id = "cloud_sync_devices",
+      topic = HelpTopic.DATA_EXPORT,
+      question = "How do I access BudgetWise on another phone?",
+      answer = "Simply install BudgetWise on your second device and sign in with the same Google account. Your transactions, monthly budgets, savings goals, custom categories, preferred currency, and display name sync automatically—skipping the initial setup guide. For security, you can set a separate 4-Digit PIN lock on each phone.",
+      keywords = listOf("multi-device", "second phone", "google", "account", "sign in", "backup", "restore", "sync"),
     ),
     HelpFaqItem(
       id = "export_backup",
@@ -103,7 +110,7 @@ object HelpCenterCatalog {
       id = "demo_vs_clear_data",
       topic = HelpTopic.DATA_EXPORT,
       question = "What is the difference between Demonstration Data and Clear All?",
-      answer = "Reset to Demonstration Data replaces your current records with sample transactions, budgets, and goals so you can test charts and features freely. Clear All Financial Records permanently deletes all local transactions, budgets, savings goals, and custom categories so you can start completely fresh.",
+      answer = "Reset to Demonstration Data replaces your synced records with sample transactions, budgets, and goals so you can test charts and features freely. Clear All Financial Records permanently deletes all transactions, budgets, savings goals, and custom categories in your account so you can start completely fresh.",
       keywords = listOf("sample", "reset", "erase", "delete all", "fresh start", "wipe"),
     ),
   )

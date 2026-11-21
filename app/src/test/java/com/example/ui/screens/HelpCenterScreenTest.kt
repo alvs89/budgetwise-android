@@ -30,7 +30,10 @@ class HelpCenterScreenTest {
   @Test
   fun `catalog filters accurately by topic and multi-word keywords`() {
     val allItems = HelpCenterCatalog.filter(HelpTopic.ALL, "")
-    assertEquals(12, allItems.size)
+    assertEquals(13, allItems.size)
+
+    val syncMatches = HelpCenterCatalog.filter(HelpTopic.DATA_EXPORT, "another phone")
+    assertTrue(syncMatches.any { it.id == "cloud_sync_devices" })
 
     val pinMatches = HelpCenterCatalog.filter(HelpTopic.ALL, "forgot pin")
     assertTrue(pinMatches.any { it.id == "forgot_pin" })
@@ -46,18 +49,24 @@ class HelpCenterScreenTest {
   }
 
   @Test
-  fun `live search, topic chips, single-open accordion, empty state, and assistant CTA work cleanly`() {
+  fun `live search, topic chips, single-open accordion, replay guide, empty state, and assistant CTA work cleanly`() {
     var assistantOpenedCount = 0
     var backClickedCount = 0
+    var replayClickedCount = 0
 
     composeTestRule.setContent {
       BudgetWiseTheme(themeMode = ThemeMode.DARK) {
         HelpCenterScreen(
           onBack = { backClickedCount += 1 },
           onOpenAssistant = { assistantOpenedCount += 1 },
+          onReplayWelcomeGuide = { replayClickedCount += 1 },
         )
       }
     }
+
+    // 0. Replay Welcome Guide row is visible on default view and triggers callback
+    composeTestRule.onNodeWithTag("help_replay_welcome_guide_row").assertIsDisplayed().performClick()
+    assertEquals(1, replayClickedCount)
 
     // 1. Expand first FAQ card -> answer appears
     composeTestRule.onNodeWithTag("help_faq_card_net_cash_flow").performClick()
