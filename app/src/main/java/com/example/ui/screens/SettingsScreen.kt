@@ -51,11 +51,13 @@ import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockReset
+import androidx.compose.material.icons.rounded.Login
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Pin
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
@@ -141,6 +143,7 @@ fun SettingsScreen(
   onLoadDemoData: () -> Unit = {},
   onClearAllData: () -> Unit,
   onSignOut: () -> Unit = {},
+  onSignInToUpgrade: () -> Unit = {},
   onPickProfilePhotoUri: (Uri) -> Unit = {},
   onSaveCroppedProfilePhoto: (
     bitmap: Bitmap,
@@ -219,6 +222,7 @@ fun SettingsScreen(
 
   if (showPhotoActionsDialog && !isAppLocked) {
     ProfilePhotoActionDialog(
+      isOfflineGuestMode = uiState.isOfflineGuestMode,
       hasCustomPhoto = uiState.customPhotoBase64.isNotBlank(),
       hasAnyPhoto = uiState.customPhotoBase64.isNotBlank() || uiState.profilePhotoUrl.isNotBlank(),
       hasGooglePhoto = !uiState.googlePhotoUrl.isNullOrBlank(),
@@ -258,7 +262,11 @@ fun SettingsScreen(
   if (showClearConfirm && !isAppLocked) {
     ConfirmationDialog(
       title = "Clear All Financial Records?",
-      message = "This permanently deletes all transactions, budgets, savings goals, and custom categories in your BudgetWise account. This cannot be undone.",
+      message = if (uiState.isOfflineGuestMode) {
+        "This permanently deletes all transactions, budgets, savings goals, and custom categories saved on this phone. This cannot be undone."
+      } else {
+        "This permanently deletes all transactions, budgets, savings goals, and custom categories in your BudgetWise account. This cannot be undone."
+      },
       confirmLabel = "Clear All",
       onConfirm = {
         onClearAllData()
@@ -396,6 +404,18 @@ fun SettingsScreen(
                 modifier = Modifier.padding(vertical = 14.dp),
                 color = subtleDividerColor,
               )
+            } else if (uiState.isOfflineGuestMode) {
+              LocalAccountBanner(
+                displayName = uiState.preferences.displayName,
+                customPhotoBase64 = uiState.customPhotoBase64,
+                isUpdatingPhoto = uiState.isUpdatingPhoto || isDecodingPickedPhoto,
+                onAvatarClick = { showPhotoActionsDialog = true },
+                onSignInToUpgrade = onSignInToUpgrade,
+              )
+              HorizontalDivider(
+                modifier = Modifier.padding(vertical = 14.dp),
+                color = subtleDividerColor,
+              )
             }
 
             // Display Name with label above so the Save CTA aligns flush with the text box body
@@ -413,7 +433,7 @@ fun SettingsScreen(
               OutlinedTextField(
                 value = nameInput,
                 onValueChange = { nameInput = it },
-                placeholder = { Text("Your name") },
+                placeholder = { Text(if (uiState.isOfflineGuestMode) "Your name (optional)" else "Your name") },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
@@ -422,7 +442,8 @@ fun SettingsScreen(
               )
               Button(
                 onClick = { onUpdateDisplayName(nameInput) },
-                enabled = nameInput.isNotBlank() && nameInput.trim() != uiState.preferences.displayName,
+                enabled = (uiState.isOfflineGuestMode || nameInput.isNotBlank()) &&
+                  nameInput.trim() != uiState.preferences.displayName,
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 18.dp),
                 modifier = Modifier
@@ -820,13 +841,21 @@ fun SettingsScreen(
               )
               Spacer(modifier = Modifier.width(6.dp))
               Text(
-                text = stringResource(R.string.settings_footer_cloud_badge),
+                text = stringResource(
+                  if (uiState.isOfflineGuestMode) {
+                    R.string.settings_footer_local_badge
+                  } else {
+                    R.string.settings_footer_cloud_badge
+                  }
+                ),
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
               )
             }
             Text(
-              text = stringResource(R.string.privacy_notice),
+              text = stringResource(
+                if (uiState.isOfflineGuestMode) R.string.privacy_notice_local else R.string.privacy_notice
+              ),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
               textAlign = TextAlign.Center,
@@ -1157,7 +1186,185 @@ private fun CloudAccountBanner(
 }
 
 @Composable
+private fun LocalAccountBanner(
+  displayName: String,
+  customPhotoBase64: String,
+  isUpdatingPhoto: Boolean,
+  onAvatarClick: () -> Unit,
+  onSignInToUpgrade: () -> Unit,
+) {
+  val context = LocalContext.current
+  val cleanName = displayName.trim()
+  val initial = cleanName.firstOrNull()?.uppercaseChar()?.toString()
+  val customPhotoBytes = remember(customPhotoBase64) {
+    ProfilePhotoProcessor.decodeBase64ToBytes(customPhotoBase64)
+  }
+
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("settings_local_account_section"),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+      Box(
+        modifier = Modifier
+          .size(60.dp)
+          .clickable(enabled = !isUpdatingPhoto, onClick = onAvatarClick)
+          .testTag("settings_profile_avatar"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier = Modifier
+            .size(58.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape),
+          contentAlignment = Alignment.Center,
+        ) {
+          if (initial != null) {
+            Text(
+              text = initial,
+              style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+          } else {
+            Icon(
+              imageVector = Icons.Rounded.Person,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onPrimaryContainer,
+              modifier = Modifier.size(26.dp),
+            )
+          }
+
+          if (customPhotoBytes != null) {
+            AsyncImage(
+              model = ImageRequest.Builder(context)
+                .data(customPhotoBytes)
+                .crossfade(true)
+                .build(),
+              contentDescription = stringResource(R.string.settings_avatar_edit_cd),
+              contentScale = ContentScale.Crop,
+              modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape),
+            )
+          }
+
+          if (isUpdatingPhoto) {
+            Box(
+              modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f)),
+              contentAlignment = Alignment.Center,
+            ) {
+              CircularProgressIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(22.dp),
+              )
+            }
+          }
+        }
+
+        Box(
+          modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary)
+            .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.CameraAlt,
+            contentDescription = stringResource(R.string.settings_avatar_edit_cd),
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(12.dp),
+          )
+        }
+      }
+
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Text(
+          text = cleanName.ifEmpty { stringResource(R.string.settings_local_account_title) },
+          style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.testTag("settings_local_account_title"),
+        )
+        Row(
+          modifier = Modifier
+            .height(24.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
+            .border(
+              0.75.dp,
+              MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+              RoundedCornerShape(999.dp),
+            )
+            .padding(horizontal = 9.dp)
+            .testTag("settings_local_device_pill"),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.Smartphone,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(12.dp),
+          )
+          Text(
+            text = stringResource(R.string.settings_local_device_pill),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+          )
+        }
+      }
+    }
+
+    FilledTonalButton(
+      onClick = onSignInToUpgrade,
+      shape = RoundedCornerShape(12.dp),
+      colors = ButtonDefaults.filledTonalButtonColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+      ),
+      modifier = Modifier
+        .fillMaxWidth()
+        .heightIn(min = 48.dp)
+        .testTag("settings_sign_in_to_backup_button"),
+    ) {
+      Icon(
+        imageVector = Icons.Rounded.Login,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.size(18.dp),
+      )
+      Spacer(modifier = Modifier.width(8.dp))
+      Text(
+        text = stringResource(R.string.settings_local_sign_in_cta),
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+        maxLines = 1,
+        softWrap = false,
+      )
+    }
+  }
+}
+
+@Composable
 private fun ProfilePhotoActionDialog(
+  isOfflineGuestMode: Boolean,
   hasCustomPhoto: Boolean,
   hasAnyPhoto: Boolean,
   hasGooglePhoto: Boolean,
@@ -1185,7 +1392,13 @@ private fun ProfilePhotoActionDialog(
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
         Text(
-          text = stringResource(R.string.settings_photo_dialog_subtitle),
+          text = stringResource(
+            if (isOfflineGuestMode) {
+              R.string.settings_photo_dialog_subtitle_local
+            } else {
+              R.string.settings_photo_dialog_subtitle
+            }
+          ),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

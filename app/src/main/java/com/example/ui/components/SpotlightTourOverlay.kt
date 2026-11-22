@@ -312,8 +312,8 @@ fun SpotlightTourOverlay(
       }
 
       // Smart max-space collision-free tooltip placement (never intersects paddedRect)
-      val gapPx = with(density) { 14.dp.toPx() }
-      val clearancePx = with(density) { 24.dp.toPx() }
+      val gapPx = with(density) { 16.dp.toPx() }
+      val clearancePx = with(density) { 26.dp.toPx() }
       val safeMarginPx = with(density) { 12.dp.toPx() }
       val safeTopPx = (statusBarTopPx + safeMarginPx).coerceAtLeast(safeMarginPx)
       val safeBottomPx = (containerHeightPx - navBarBottomPx - safeMarginPx).coerceAtLeast(safeTopPx)

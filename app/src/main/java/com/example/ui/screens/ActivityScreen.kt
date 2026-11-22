@@ -152,7 +152,7 @@ fun ActivityScreen(
         filteredNetCentavos < 0L -> "-"
         else -> ""
       }
-      "$countText · $prefix$formatted"
+      "$countText · Net $prefix$formatted"
     }
   }
   val availableCategories = remember(uiState.allTransactions, filter.typeFilter) {
@@ -176,84 +176,87 @@ fun ActivityScreen(
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       item {
-        Row(
+        Column(
           modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
+          verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-          Column(
-            modifier = Modifier
-              .weight(1f)
-              .padding(end = 8.dp),
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
           ) {
             AutoResizeSingleLineText(
               text = "Activity",
               style = MaterialTheme.typography.displaySmall,
               color = MaterialTheme.colorScheme.onBackground,
               minFontSize = 20.sp,
+              modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
             )
-            Text(
-              text = filteredSubtitle,
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.testTag("activity_filtered_summary"),
-            )
-          }
-          Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Surface(
-              shape = CircleShape,
-              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-              border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+            Row(
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalAlignment = Alignment.CenterVertically,
             ) {
-              IconButton(
-                onClick = onExportData,
-                modifier = Modifier
-                  .size(40.dp)
-                  .testTag("activity_export_button"),
+              Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
               ) {
-                Icon(
-                  imageVector = Icons.Rounded.FileDownload,
-                  contentDescription = "Export financial report",
-                  tint = MaterialTheme.colorScheme.onSurface,
-                  modifier = Modifier.size(19.dp),
-                )
-              }
-            }
-            Box {
-              OutlinedButton(
-                onClick = { showSortMenu = true },
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                modifier = Modifier.testTag("sort_button"),
-              ) {
-                Icon(Icons.Rounded.SwapVert, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(
-                  text = filter.sortOrder.label,
-                  maxLines = 1,
-                  softWrap = false,
-                  modifier = Modifier.padding(start = 6.dp),
-                )
-              }
-              DropdownMenu(
-                expanded = showSortMenu && !isAppLocked,
-                onDismissRequest = { showSortMenu = false },
-              ) {
-                TransactionSortOrder.entries.forEach { order ->
-                  DropdownMenuItem(
-                    text = { Text(order.label) },
-                    onClick = {
-                      onSortOrderChange(order)
-                      showSortMenu = false
-                    },
+                IconButton(
+                  onClick = onExportData,
+                  modifier = Modifier
+                    .size(40.dp)
+                    .testTag("activity_export_button"),
+                ) {
+                  Icon(
+                    imageVector = Icons.Rounded.FileDownload,
+                    contentDescription = "Export financial report",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(19.dp),
                   )
+                }
+              }
+              Box {
+                OutlinedButton(
+                  onClick = { showSortMenu = true },
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                  modifier = Modifier.testTag("sort_button"),
+                ) {
+                  Icon(Icons.Rounded.SwapVert, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Text(
+                    text = filter.sortOrder.label,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(start = 6.dp),
+                  )
+                }
+                DropdownMenu(
+                  expanded = showSortMenu && !isAppLocked,
+                  onDismissRequest = { showSortMenu = false },
+                ) {
+                  TransactionSortOrder.entries.forEach { order ->
+                    DropdownMenuItem(
+                      text = { Text(order.label) },
+                      onClick = {
+                        onSortOrderChange(order)
+                        showSortMenu = false
+                      },
+                    )
+                  }
                 }
               }
             }
           }
+          AutoResizeSingleLineText(
+            text = filteredSubtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            minFontSize = 11.sp,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("activity_filtered_summary"),
+          )
         }
       }
 

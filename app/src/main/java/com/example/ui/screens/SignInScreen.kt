@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,11 +25,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Login
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,8 +39,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,15 +58,23 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 
 /**
- * Branded Google Sign-In screen gating multi-device cloud sync in BudgetWise.
+ * Branded BudgetWise welcome & sign-in screen supporting 1-tap Google Sign-In as well as a
+ * zero-friction offline on-device mode.
  */
 @Composable
 fun SignInScreen(
   isSigningIn: Boolean,
   errorMessage: String?,
   onSignInWithGoogle: () -> Unit,
+  onContinueOffline: (() -> Unit)? = null,
+  canNavigateBack: Boolean = false,
+  onBack: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
+  if (canNavigateBack) {
+    BackHandler(enabled = !isSigningIn, onBack = onBack)
+  }
+
   val scrollState = rememberScrollState()
 
   Box(
@@ -68,7 +82,8 @@ fun SignInScreen(
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background)
       .statusBarsPadding()
-      .navigationBarsPadding(),
+      .navigationBarsPadding()
+      .imePadding(),
     contentAlignment = Alignment.Center,
   ) {
     Column(
@@ -76,7 +91,7 @@ fun SignInScreen(
         .widthIn(max = 460.dp)
         .fillMaxSize()
         .verticalScroll(scrollState)
-        .padding(horizontal = 24.dp, vertical = 28.dp),
+        .padding(horizontal = 24.dp, vertical = 20.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -84,12 +99,41 @@ fun SignInScreen(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        if (canNavigateBack) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            TextButton(
+              onClick = onBack,
+              enabled = !isSigningIn,
+              contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+              modifier = Modifier.testTag("sign_in_back_button"),
+            ) {
+              Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = stringResource(R.string.welcome_back),
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(20.dp),
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = stringResource(R.string.welcome_back),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+              )
+            }
+          }
+          Spacer(modifier = Modifier.height(6.dp))
+        } else {
+          Spacer(modifier = Modifier.height(14.dp))
+        }
 
         // Branded dark-emerald mark
         Box(
           modifier = Modifier
-            .size(76.dp)
+            .size(72.dp)
             .clip(RoundedCornerShape(22.dp))
             .background(
               Brush.linearGradient(
@@ -105,11 +149,11 @@ fun SignInScreen(
             imageVector = Icons.Rounded.AccountBalanceWallet,
             contentDescription = stringResource(R.string.app_name),
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(38.dp),
+            modifier = Modifier.size(36.dp),
           )
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
           text = stringResource(R.string.app_name),
@@ -121,10 +165,12 @@ fun SignInScreen(
           textAlign = TextAlign.Center,
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-          text = stringResource(R.string.sign_in_headline),
+          text = stringResource(
+            if (canNavigateBack) R.string.sign_in_upgrade_headline else R.string.sign_in_headline
+          ),
           style = MaterialTheme.typography.titleMedium.copy(
             fontWeight = FontWeight.SemiBold,
           ),
@@ -132,16 +178,18 @@ fun SignInScreen(
           textAlign = TextAlign.Center,
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-          text = stringResource(R.string.sign_in_subtitle),
-          style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+          text = stringResource(
+            if (canNavigateBack) R.string.sign_in_upgrade_subtitle else R.string.sign_in_subtitle
+          ),
+          style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           textAlign = TextAlign.Center,
         )
 
-        Spacer(modifier = Modifier.height(26.dp))
+        Spacer(modifier = Modifier.height(22.dp))
 
         // Value highlights card
         Surface(
@@ -153,8 +201,8 @@ fun SignInScreen(
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+              .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
           ) {
             SignInFeatureRow(
               icon = Icons.Rounded.CloudDone,
@@ -180,7 +228,7 @@ fun SignInScreen(
       Column(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(top = 24.dp),
+          .padding(top = 22.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
@@ -227,7 +275,7 @@ fun SignInScreen(
           contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
           modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 54.dp)
+            .heightIn(min = 52.dp)
             .testTag("sign_in_google_button"),
         ) {
           if (isSigningIn) {
@@ -255,12 +303,68 @@ fun SignInScreen(
           }
         }
 
-        Text(
-          text = stringResource(R.string.sign_in_footer_note),
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-          textAlign = TextAlign.Center,
-        )
+        if (onContinueOffline != null) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            HorizontalDivider(
+              modifier = Modifier.weight(1f),
+              color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+            )
+            Text(
+              text = stringResource(R.string.sign_in_or_divider),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider(
+              modifier = Modifier.weight(1f),
+              color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+            )
+          }
+
+          OutlinedButton(
+            onClick = onContinueOffline,
+            enabled = !isSigningIn,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.75f)),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = 50.dp)
+              .testTag("sign_in_offline_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.Smartphone,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = stringResource(R.string.sign_in_continue_offline),
+              style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+              color = MaterialTheme.colorScheme.onSurface,
+            )
+          }
+
+          Text(
+            text = stringResource(R.string.sign_in_offline_caption),
+            style = MaterialTheme.typography.labelSmall.copy(lineHeight = 17.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+            textAlign = TextAlign.Center,
+          )
+        } else {
+          Text(
+            text = stringResource(R.string.sign_in_footer_note),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            textAlign = TextAlign.Center,
+          )
+        }
       }
     }
   }

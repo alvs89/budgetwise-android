@@ -215,26 +215,12 @@ fun GoalsScreen(
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
+      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 104.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       item {
         Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .then(
-              if (!hasGoals) {
-                Modifier.onGloballyPositioned { coords ->
-                  if (coords.isAttached) {
-                    runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                      onRegisterSpotlightBounds(SpotlightTargetId.GOALS_OVERVIEW, rect)
-                    }
-                  }
-                }
-              } else {
-                Modifier
-              }
-            ),
+          modifier = Modifier.fillMaxWidth(),
           verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
           Row(
@@ -242,10 +228,11 @@ fun GoalsScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            Text(
+            AutoResizeSingleLineText(
               text = "Savings Goals",
               style = MaterialTheme.typography.displaySmall,
-              maxLines = 1,
+              color = MaterialTheme.colorScheme.onBackground,
+              minFontSize = 20.sp,
               modifier = Modifier
                 .weight(1f)
                 .padding(end = 8.dp),
@@ -384,6 +371,13 @@ fun GoalsScreen(
             onAction = {
               editingGoal = null
               showGoalEditor = true
+            },
+            actionButtonModifier = Modifier.onGloballyPositioned { coords ->
+              if (coords.isAttached) {
+                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                  onRegisterSpotlightBounds(SpotlightTargetId.GOALS_OVERVIEW, rect)
+                }
+              }
             },
           )
         }

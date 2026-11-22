@@ -49,6 +49,8 @@ import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.PieChart
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Savings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -61,6 +63,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -189,9 +192,11 @@ fun BudgetWiseRoot(
     .collectAsStateWithLifecycle(initialValue = auth.currentUser)
 
   val localPrefsRepo = remember(context) { UserPreferencesRepository(context.applicationContext) }
-  val localPrefs by localPrefsRepo.userPreferences.collectAsStateWithLifecycle(
-    initialValue = UserPreferences()
+  val loadedLocalPrefs by localPrefsRepo.userPreferences.collectAsStateWithLifecycle(
+    initialValue = null
   )
+  val localPrefs = loadedLocalPrefs ?: UserPreferences()
+  val isPrefsLoaded = loadedLocalPrefs != null
 
   var showLaunchSplash by rememberSaveable { mutableStateOf(true) }
   var dashboardRevealed by rememberSaveable { mutableStateOf(false) }
@@ -209,56 +214,34 @@ fun BudgetWiseRoot(
   var isSigningIn by remember { mutableStateOf(false) }
   var signInError by remember { mutableStateOf<String?>(null) }
   var attemptedAutoSignIn by rememberSaveable { mutableStateOf(false) }
+  var isRequestingAccountUpgrade by rememberSaveable { mutableStateOf(false) }
   var authSessionNonce by rememberSaveable { mutableIntStateOf(0) }
   val coroutineScope = rememberCoroutineScope()
 
-  LaunchedEffect(currentUser, attemptedAutoSignIn) {
-    if (currentUser == null && !attemptedAutoSignIn) {
+  LaunchedEffect(currentUser, isPrefsLoaded, localPrefs.isOfflineGuestMode, attemptedAutoSignIn) {
+    if (!isPrefsLoaded) return@LaunchedEffect
+    if (currentUser == null && !localPrefs.isOfflineGuestMode && !attemptedAutoSignIn) {
       attemptedAutoSignIn = true
       val activityCtx = context.findActivity() ?: context
       GoogleAuthHelper.attemptAutoSignIn(activityCtx, auth)
     } else if (currentUser != null) {
       isSigningIn = false
       signInError = null
+      isRequestingAccountUpgrade = false
+      if (localPrefs.isOfflineGuestMode) {
+        localPrefsRepo.setOfflineGuestMode(false)
+      }
     }
   }
 
   Box(modifier = Modifier.fillMaxSize()) {
     val activeUser = currentUser
-    if (activeUser == null) {
-      BudgetWiseTheme(themeMode = localPrefs.themeMode) {
-        SignInScreen(
-          isSigningIn = isSigningIn,
-          errorMessage = signInError,
-          onSignInWithGoogle = {
-            if (isSigningIn) return@SignInScreen
-            isSigningIn = true
-            signInError = null
-            coroutineScope.launch {
-              val activityCtx = context.findActivity() ?: context
-              when (val result = GoogleAuthHelper.onGoogleSignInClicked(activityCtx, auth)) {
-                is GoogleSignInResult.Success -> {
-                  isSigningIn = false
-                  signInError = null
-                }
-                GoogleSignInResult.Cancelled -> {
-                  isSigningIn = false
-                }
-                is GoogleSignInResult.Failure -> {
-                  isSigningIn = false
-                  signInError = result.message
-                }
-              }
-            }
-          },
-        )
-      }
-    } else {
+    val application = remember(context) {
+      (context.applicationContext as? Application) ?: context.findActivity()?.application
+    }
+
+    if (activeUser != null && application != null) {
       val sessionScopeKey = "${activeUser.uid}_$authSessionNonce"
-      val application = remember(context) {
-        (context.applicationContext as? Application) ?: context.findActivity()?.application
-      }
-      if (application != null) {
       key(sessionScopeKey) {
         val firestore = remember(context) { getBudgetWiseFirestore(context.applicationContext) }
         val scopedViewModel: BudgetWiseViewModel = viewModel(
@@ -297,6 +280,7 @@ fun BudgetWiseRoot(
                 auth = auth,
                 onBeforeSignOut = {
                   scopedViewModel.prepareForSignOut()
+                  localPrefsRepo.setOfflineGuestMode(false)
                   authSessionNonce += 1
                 },
               )
@@ -304,6 +288,81 @@ fun BudgetWiseRoot(
           },
         )
       }
+    } else if (isPrefsLoaded && localPrefs.isOfflineGuestMode && !isRequestingAccountUpgrade && application != null) {
+      val guestScopeKey = "${UserPreferencesRepository.LOCAL_GUEST_USER_ID}_$authSessionNonce"
+      key(guestScopeKey) {
+        val guestViewModel: BudgetWiseViewModel = viewModel(
+          key = guestScopeKey,
+          factory = BudgetWiseViewModel.provideGuestFactory(application = application),
+        )
+
+        LaunchedEffect(guestViewModel) {
+          foregroundEvents.collect { guestViewModel.onAppReturnedToForeground() }
+        }
+        LaunchedEffect(guestViewModel) {
+          backgroundEvents.collect { guestViewModel.onAppMovedToBackground() }
+        }
+        val pendingDeepLink by pendingNotificationDeepLink.collectAsStateWithLifecycle()
+        LaunchedEffect(guestViewModel, pendingDeepLink) {
+          val deepLink = pendingDeepLink ?: return@LaunchedEffect
+          guestViewModel.handleNotificationDeepLink(deepLink.first, deepLink.second)
+          onConsumeNotificationDeepLink()
+        }
+
+        BudgetWiseApp(
+          viewModel = guestViewModel,
+          externalSplashActive = showLaunchSplash,
+          externalDashboardRevealed = dashboardRevealed,
+          onSignInToUpgrade = {
+            signInError = null
+            isRequestingAccountUpgrade = true
+          },
+        )
+      }
+    } else if (isPrefsLoaded) {
+      BudgetWiseTheme(themeMode = localPrefs.themeMode) {
+        SignInScreen(
+          isSigningIn = isSigningIn,
+          errorMessage = signInError,
+          canNavigateBack = isRequestingAccountUpgrade,
+          onBack = {
+            signInError = null
+            isRequestingAccountUpgrade = false
+          },
+          onSignInWithGoogle = {
+            if (isSigningIn) return@SignInScreen
+            isSigningIn = true
+            signInError = null
+            coroutineScope.launch {
+              val activityCtx = context.findActivity() ?: context
+              when (val result = GoogleAuthHelper.onGoogleSignInClicked(activityCtx, auth)) {
+                is GoogleSignInResult.Success -> {
+                  isSigningIn = false
+                  signInError = null
+                  isRequestingAccountUpgrade = false
+                  localPrefsRepo.setOfflineGuestMode(false)
+                }
+                GoogleSignInResult.Cancelled -> {
+                  isSigningIn = false
+                }
+                is GoogleSignInResult.Failure -> {
+                  isSigningIn = false
+                  signInError = result.message
+                }
+              }
+            }
+          },
+          onContinueOffline = if (!isRequestingAccountUpgrade) {
+            {
+              signInError = null
+              coroutineScope.launch {
+                localPrefsRepo.setOfflineGuestMode(true)
+              }
+            }
+          } else {
+            null
+          },
+        )
       }
     }
 
@@ -319,6 +378,7 @@ fun BudgetWiseApp(
   externalSplashActive: Boolean? = null,
   externalDashboardRevealed: Boolean? = null,
   onSignOut: () -> Unit = {},
+  onSignInToUpgrade: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -681,8 +741,7 @@ fun BudgetWiseApp(
           }
         },
         floatingActionButton = {
-          val showQuickAddFab = currentDestination?.hasRoute<HomeRoute>() == true ||
-            currentDestination?.hasRoute<ActivityRoute>() == true
+          val showQuickAddFab = !isSettingsRoute
           if (showQuickAddFab) {
             FloatingActionButton(
               onClick = {
@@ -847,6 +906,7 @@ fun BudgetWiseApp(
                 onLoadDemoData = viewModel::loadDemonstrationData,
                 onClearAllData = viewModel::clearAllRecords,
                 onSignOut = onSignOut,
+                onSignInToUpgrade = onSignInToUpgrade,
                 onPickProfilePhotoUri = viewModel::updateProfilePhotoFromUri,
                 onSaveCroppedProfilePhoto = viewModel::saveCroppedProfilePhoto,
                 onShowErrorToast = { msg -> viewModel.notifyUser(msg, ToastType.ERROR) },
@@ -900,6 +960,7 @@ fun BudgetWiseApp(
           !effectiveAppLock &&
           !showLaunchSplash &&
           !isSettingsRoute &&
+          uiState.pendingLocalMigrationCount == 0 &&
           (uiState.shouldShowSpotlightTour || isReplayingTour)
 
         val safeTourIndex = spotlightStepIndex.coerceIn(0, BudgetWiseSpotlightSteps.lastIndex)
@@ -994,6 +1055,93 @@ fun BudgetWiseApp(
           onDisableAppLockAfterDeviceAuth = viewModel::disableAppLock,
           onFactoryResetForForgottenPin = viewModel::factoryResetForForgottenPin,
         )
+
+        if (
+          uiState.pendingLocalMigrationCount > 0 &&
+          !uiState.isLoading &&
+          !effectiveAppLock &&
+          !showLaunchSplash
+        ) {
+          val count = uiState.pendingLocalMigrationCount
+          val hasExistingCloudData = uiState.cloudAccountHasExistingRecords
+          AlertDialog(
+            onDismissRequest = { /* Require explicit user choice to prevent silent data loss */ },
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = {
+              Text(
+                text = stringResource(
+                  if (hasExistingCloudData) R.string.migration_merge_title else R.string.migration_upload_title
+                ),
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+              )
+            },
+            text = {
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                  text = when {
+                    hasExistingCloudData && count == 1 -> stringResource(R.string.migration_merge_message_one)
+                    hasExistingCloudData -> stringResource(R.string.migration_merge_message_many, count)
+                    count == 1 -> stringResource(R.string.migration_upload_message_one)
+                    else -> stringResource(R.string.migration_upload_message_many, count)
+                  },
+                  style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                  text = stringResource(
+                    if (hasExistingCloudData) {
+                      R.string.migration_merge_discard_note
+                    } else {
+                      R.string.migration_upload_discard_note
+                    }
+                  ),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                )
+              }
+            },
+            confirmButton = {
+              Button(
+                onClick = viewModel::migrateLocalGuestDataToAccount,
+                enabled = !uiState.isMigratingLocalData,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.testTag("migration_confirm_button"),
+              ) {
+                if (uiState.isMigratingLocalData) {
+                  CircularProgressIndicator(
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(16.dp),
+                  )
+                  Text(
+                    text = stringResource(R.string.migration_dialog_migrating),
+                    modifier = Modifier.padding(start = 8.dp),
+                  )
+                } else {
+                  Text(
+                    stringResource(
+                      if (hasExistingCloudData) R.string.migration_merge_confirm else R.string.migration_upload_confirm
+                    )
+                  )
+                }
+              }
+            },
+            dismissButton = {
+              TextButton(
+                onClick = viewModel::discardLocalAndKeepCloudOnly,
+                enabled = !uiState.isMigratingLocalData,
+                modifier = Modifier.testTag("migration_keep_separate_button"),
+              ) {
+                Text(
+                  stringResource(
+                    if (hasExistingCloudData) R.string.migration_merge_secondary else R.string.migration_upload_secondary
+                  )
+                )
+              }
+            },
+          )
+        }
 
         if (externalSplashActive == null) {
           LaunchSplashOverlay(

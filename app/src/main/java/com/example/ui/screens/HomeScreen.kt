@@ -185,8 +185,9 @@ fun HomeScreen(
           modifier = Modifier.fillMaxWidth(),
           verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+          val greetingName = uiState.preferences.displayName.trim()
           Text(
-            text = "GOOD DAY, ${uiState.preferences.displayName.uppercase()}",
+            text = if (greetingName.isEmpty()) "GOOD DAY" else "GOOD DAY, ${greetingName.uppercase()}",
             style = MaterialTheme.typography.labelSmall.copy(
               letterSpacing = 0.6.sp,
               fontWeight = FontWeight.SemiBold,
@@ -460,7 +461,7 @@ fun HomeScreen(
                   .testTag("hero_net_cash_flow"),
               )
 
-              Text(
+              AutoResizeSingleLineText(
                 text = if (isAllTime) {
                   "Cumulative across ${uiState.allTransactions.size} recorded transactions"
                 } else {
@@ -468,8 +469,8 @@ fun HomeScreen(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.72f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                minFontSize = 10.sp,
+                modifier = Modifier.fillMaxWidth(),
               )
             }
           }
@@ -775,12 +776,12 @@ fun HomeScreen(
                   val isHidden = LocalIsBalanceHidden.current
                   val savedStr = FinanceCalculator.formatCurrencyOrMasked(goal.savedAmount, currency, isHidden)
                   val targetStr = FinanceCalculator.formatCurrencyOrMasked(goal.targetAmount, currency, isHidden)
-                  Text(
+                  AutoResizeSingleLineText(
                     text = "$savedStr saved of $targetStr",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    minFontSize = 10.sp,
+                    modifier = Modifier.fillMaxWidth(),
                   )
                 }
               }

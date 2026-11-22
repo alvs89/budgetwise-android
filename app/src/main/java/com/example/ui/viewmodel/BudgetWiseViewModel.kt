@@ -3,6 +3,7 @@ package com.example.ui.viewmodel
 import android.app.Application
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Base64
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
@@ -27,6 +28,7 @@ import com.example.data.local.entity.TransactionEntity
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.repository.BudgetWiseRepository
+import com.example.data.repository.LocalGuestSnapshot
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.auth.userProfileChangeRequest
@@ -174,6 +176,10 @@ data class BudgetWiseUiState(
   val googlePhotoUrl: String? = null,
   val isUpdatingPhoto: Boolean = false,
   val isSeedingDemoData: Boolean = false,
+  val isOfflineGuestMode: Boolean = false,
+  val pendingLocalMigrationCount: Int = 0,
+  val cloudAccountHasExistingRecords: Boolean = false,
+  val isMigratingLocalData: Boolean = false,
   val shouldShowSpotlightTour: Boolean = false,
   val cloudErrorMessage: String? = null,
 )
@@ -200,6 +206,17 @@ private data class CloudMetaInputs(
   val isUpdatingPhoto: Boolean,
   val isSeedingDemoData: Boolean,
   val cloudErrorMessage: String?,
+)
+
+private data class PendingLocalMigration(
+  val snapshot: LocalGuestSnapshot,
+  val cloudAccountHasExistingRecords: Boolean,
+)
+
+private data class LocalGuestMetaInputs(
+  val localPhotoBase64: String,
+  val pendingMigration: PendingLocalMigration?,
+  val isMigrating: Boolean,
 )
 
 /**
@@ -231,12 +248,18 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private val profileSourceFlow = cloudRepository?.profileState ?: flowOf(CloudProfileState.Missing)
   private val syncStatusSourceFlow = cloudRepository?.syncStatus ?: flowOf(CloudSyncStatus.SYNCED)
 
+  private val isOfflineGuestSession: Boolean =
+    cloudRepository == null && userId == UserPreferencesRepository.LOCAL_GUEST_USER_ID
+
   private val selectedMonthFlow = MutableStateFlow(YearMonthKey.current())
   private val activityFilterFlow = MutableStateFlow(ActivityFilterState())
   private val homePeriodScopeFlow = MutableStateFlow(HomePeriodScope.THIS_MONTH)
   private val isUpdatingPhotoFlow = MutableStateFlow(false)
   private val isSeedingDemoDataFlow = MutableStateFlow(false)
   private val cloudErrorMessageFlow = MutableStateFlow<String?>(null)
+  private val localGuestPhotoBase64Flow = MutableStateFlow("")
+  private val pendingLocalMigrationFlow = MutableStateFlow<PendingLocalMigration?>(null)
+  private val isMigratingLocalDataFlow = MutableStateFlow(false)
 
   private val _snackbarMessages = MutableSharedFlow<AppToastMessage>(extraBufferCapacity = 8)
   val snackbarMessages: SharedFlow<AppToastMessage> = _snackbarMessages.asSharedFlow()
@@ -310,16 +333,32 @@ class BudgetWiseViewModel @JvmOverloads constructor(
               seedResult.onSuccess { writtenCount ->
                 preferencesRepository.markDemoAccountAutoSeeded()
                 if (writtenCount > 0) {
-                  emitSuccess("Demonstration data loaded and synced")
+                  emitSuccess("Demonstration data loaded")
                 }
               }
             }
+            val localSnapshot = runCatching { repository.getLocalGuestSnapshot() }.getOrNull()
+            if (localSnapshot != null && localSnapshot.totalRecordCount > 0) {
+              val cloudHasData = cloudRepository.hasExistingFinancialRecords()
+              pendingLocalMigrationFlow.value = PendingLocalMigration(
+                snapshot = localSnapshot,
+                cloudAccountHasExistingRecords = cloudHasData,
+              )
+            }
           }.onFailure { err ->
-            cloudErrorMessageFlow.value = err.localizedMessage ?: "Unable to initialize cloud account."
+            cloudErrorMessageFlow.value = err.localizedMessage ?: "Unable to connect to your account."
           }
           cloudRepository.verifyServerSync()
         } else {
           repository.ensureInitialDataSeeded()
+          if (isOfflineGuestSession) {
+            val savedLocalAvatar = withContext(Dispatchers.IO) {
+              readLocalGuestAvatarBase64()
+            }
+            if (savedLocalAvatar.isNotBlank()) {
+              localGuestPhotoBase64Flow.value = savedLocalAvatar
+            }
+          }
         }
         syncDailyReminderSchedule(initialPrefs)
         evaluateActiveAlertsOnStartup(initialPrefs)
@@ -327,7 +366,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         throw e
       } catch (e: Exception) {
         Log.e(TAG, "Startup initialization failed gracefully", e)
-        cloudErrorMessageFlow.value = e.localizedMessage ?: "Startup sync paused."
+        cloudErrorMessageFlow.value = e.localizedMessage ?: "Unable to refresh your account right now."
       }
     }
   }
@@ -362,11 +401,20 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     CloudMetaInputs(profileState, syncStatus, isUpdatingPhoto, isSeedingDemoData, cloudError)
   }
 
+  private val localGuestMetaFlow = combine(
+    localGuestPhotoBase64Flow,
+    pendingLocalMigrationFlow,
+    isMigratingLocalDataFlow,
+  ) { localPhoto, pendingMigration, isMigrating ->
+    LocalGuestMetaInputs(localPhoto, pendingMigration, isMigrating)
+  }
+
   val uiState: StateFlow<BudgetWiseUiState> = combine(
     coreInputsFlow,
     secondaryInputsFlow,
     cloudMetaInputsFlow,
-  ) { core, secondary, cloudMeta ->
+    localGuestMetaFlow,
+  ) { core, secondary, cloudMeta, localGuestMeta ->
     val isCloudProfileLoading = cloudRepository != null &&
       cloudMeta.cloudErrorMessage == null &&
       (cloudMeta.profileState is CloudProfileState.Loading || cloudMeta.profileState is CloudProfileState.Missing)
@@ -383,13 +431,24 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     } else {
       core.prefs
     }
-    val resolvedPhotoUrl = loadedProfile?.photoUrl ?: accountPhotoUrl.orEmpty()
-    val resolvedCustomPhotoBase64 = loadedProfile?.customPhotoBase64.orEmpty()
-    val shouldShowTour = cloudRepository != null &&
+    val resolvedPhotoUrl = if (cloudRepository != null) {
+      loadedProfile?.photoUrl ?: accountPhotoUrl.orEmpty()
+    } else {
+      ""
+    }
+    val resolvedCustomPhotoBase64 = if (cloudRepository != null) {
+      loadedProfile?.customPhotoBase64.orEmpty()
+    } else {
+      localGuestMeta.localPhotoBase64
+    }
+    val shouldShowTour = if (cloudRepository != null) {
       !isCloudProfileLoading &&
-      loadedProfile != null &&
-      !loadedProfile.onboardingCompleted &&
-      !core.prefs.hasCompletedTour
+        loadedProfile != null &&
+        !loadedProfile.onboardingCompleted &&
+        !core.prefs.hasCompletedTour
+    } else {
+      isOfflineGuestSession && !core.prefs.hasCompletedTour
+    }
     val month = core.selectedMonth
     val transactions = core.transactions
     val monthTransactions = FinanceCalculator.filterTransactionsByMonth(transactions, month)
@@ -469,6 +528,10 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       googlePhotoUrl = accountPhotoUrl?.takeIf { it.isNotBlank() },
       isUpdatingPhoto = cloudMeta.isUpdatingPhoto,
       isSeedingDemoData = cloudMeta.isSeedingDemoData,
+      isOfflineGuestMode = isOfflineGuestSession,
+      pendingLocalMigrationCount = localGuestMeta.pendingMigration?.snapshot?.totalRecordCount ?: 0,
+      cloudAccountHasExistingRecords = localGuestMeta.pendingMigration?.cloudAccountHasExistingRecords ?: false,
+      isMigratingLocalData = localGuestMeta.isMigrating,
       shouldShowSpotlightTour = shouldShowTour,
       cloudErrorMessage = resolvedCloudError,
     )
@@ -1076,12 +1139,6 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     offsetYNorm: Float,
     onFinished: (Boolean) -> Unit = {},
   ) {
-    val repo = cloudRepository
-    if (repo == null) {
-      emitError("Sign in to sync a custom profile photo")
-      onFinished(false)
-      return
-    }
     viewModelScope.launch {
       isUpdatingPhotoFlow.value = true
       val encoded = withContext(Dispatchers.IO) {
@@ -1101,25 +1158,32 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         return@launch
       }
       var saved = false
-      repo.updateCustomPhotoBase64(encoded)
-        .onSuccess {
+      val repo = cloudRepository
+      if (repo != null) {
+        repo.updateCustomPhotoBase64(encoded)
+          .onSuccess {
+            saved = true
+            emitSuccess("Profile photo updated")
+          }
+          .onFailure {
+            emitError("Unable to save profile photo. Please try again.")
+          }
+      } else {
+        val wrote = withContext(Dispatchers.IO) { writeLocalGuestAvatarBase64(encoded) }
+        if (wrote) {
+          localGuestPhotoBase64Flow.value = encoded
           saved = true
           emitSuccess("Profile photo updated")
-        }
-        .onFailure {
+        } else {
           emitError("Unable to save profile photo. Please try again.")
         }
+      }
       isUpdatingPhotoFlow.value = false
       onFinished(saved)
     }
   }
 
   fun updateProfilePhotoFromUri(uri: Uri) {
-    val repo = cloudRepository
-    if (repo == null) {
-      emitError("Sign in to sync a custom profile photo")
-      return
-    }
     viewModelScope.launch {
       isUpdatingPhotoFlow.value = true
       val encoded = withContext(Dispatchers.IO) {
@@ -1132,13 +1196,24 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         emitError("Unable to read selected image. Please try another photo.")
         return@launch
       }
-      repo.updateCustomPhotoBase64(encoded)
-        .onSuccess {
+      val repo = cloudRepository
+      if (repo != null) {
+        repo.updateCustomPhotoBase64(encoded)
+          .onSuccess {
+            emitSuccess("Profile photo updated")
+          }
+          .onFailure {
+            emitError("Unable to save profile photo. Please try again.")
+          }
+      } else {
+        val wrote = withContext(Dispatchers.IO) { writeLocalGuestAvatarBase64(encoded) }
+        if (wrote) {
+          localGuestPhotoBase64Flow.value = encoded
           emitSuccess("Profile photo updated")
-        }
-        .onFailure {
+        } else {
           emitError("Unable to save profile photo. Please try again.")
         }
+      }
       isUpdatingPhotoFlow.value = false
     }
   }
@@ -1159,28 +1234,117 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   }
 
   fun removeProfilePhoto() {
-    val repo = cloudRepository ?: return
     viewModelScope.launch {
       isUpdatingPhotoFlow.value = true
-      repo.removeProfilePhoto()
-        .onSuccess {
-          emitSuccess("Profile photo removed")
-        }
-        .onFailure {
-          emitError("Unable to remove profile photo. Please try again.")
-        }
+      val repo = cloudRepository
+      if (repo != null) {
+        repo.removeProfilePhoto()
+          .onSuccess {
+            emitSuccess("Profile photo removed")
+          }
+          .onFailure {
+            emitError("Unable to remove profile photo. Please try again.")
+          }
+      } else {
+        withContext(Dispatchers.IO) { deleteLocalGuestAvatarFile() }
+        localGuestPhotoBase64Flow.value = ""
+        emitSuccess("Profile photo removed")
+      }
       isUpdatingPhotoFlow.value = false
+    }
+  }
+
+  fun migrateLocalGuestDataToAccount() {
+    val repo = cloudRepository ?: return
+    val pending = pendingLocalMigrationFlow.value ?: return
+    val snapshot = pending.snapshot
+    if (isMigratingLocalDataFlow.value) return
+    viewModelScope.launch {
+      isMigratingLocalDataFlow.value = true
+      try {
+        val result = repo.migrateLocalGuestSnapshot(snapshot)
+        if (result.isFailure) {
+          emitError("Unable to merge your device records right now. Please try again.")
+          return@launch
+        }
+        val localAvatar = withContext(Dispatchers.IO) { readLocalGuestAvatarBase64() }
+        if (localAvatar.isNotBlank() && uiState.value.customPhotoBase64.isBlank()) {
+          runCatching { repo.updateCustomPhotoBase64(localAvatar) }
+        }
+        withContext(Dispatchers.IO) { deleteLocalGuestAvatarFile() }
+        repository.clearLocalGuestFinancialRecords()
+        preferencesRepository.setDismissedLocalMigration(false)
+        pendingLocalMigrationFlow.value = null
+        evaluateActiveAlertsOnStartup(uiState.value.preferences)
+        val count = snapshot.totalRecordCount
+        val entryLabel = if (count == 1) "record" else "records"
+        emitSuccess(
+          if (pending.cloudAccountHasExistingRecords) {
+            "Merged $count $entryLabel with your account"
+          } else {
+            "Added $count $entryLabel from this phone to your account"
+          }
+        )
+      } finally {
+        isMigratingLocalDataFlow.value = false
+      }
+    }
+  }
+
+  fun discardLocalAndKeepCloudOnly() {
+    val pending = pendingLocalMigrationFlow.value ?: return
+    if (isMigratingLocalDataFlow.value) return
+    viewModelScope.launch {
+      isMigratingLocalDataFlow.value = true
+      try {
+        withContext(Dispatchers.IO) { deleteLocalGuestAvatarFile() }
+        repository.clearLocalGuestFinancialRecords()
+        preferencesRepository.setDismissedLocalMigration(false)
+        pendingLocalMigrationFlow.value = null
+        emitInfo(
+          if (pending.cloudAccountHasExistingRecords) {
+            "Loaded your Google account records"
+          } else {
+            "Starting fresh with your Google account"
+          }
+        )
+      } finally {
+        isMigratingLocalDataFlow.value = false
+      }
+    }
+  }
+
+  private fun localGuestAvatarFile(): File =
+    File(getApplication<Application>().filesDir, LOCAL_GUEST_AVATAR_FILENAME)
+
+  private fun readLocalGuestAvatarBase64(): String = runCatching {
+    val file = localGuestAvatarFile()
+    if (!file.exists() || file.length() <= 0L) return ""
+    Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+  }.getOrDefault("")
+
+  private fun writeLocalGuestAvatarBase64(base64: String): Boolean = runCatching {
+    val bytes = Base64.decode(base64, Base64.DEFAULT)
+    if (bytes.isEmpty()) return false
+    localGuestAvatarFile().writeBytes(bytes)
+    true
+  }.getOrDefault(false)
+
+  private fun deleteLocalGuestAvatarFile() {
+    runCatching {
+      val file = localGuestAvatarFile()
+      if (file.exists()) file.delete()
     }
   }
 
   fun updateDisplayName(name: String) {
     viewModelScope.launch {
       val cleanName = name.trim().take(60)
-      if (cleanName.isEmpty()) return@launch
+      if (!isOfflineGuestSession && cleanName.isEmpty()) return@launch
       if (cloudRepository != null) {
         val result = cloudRepository.updateDisplayName(cleanName)
         if (result.isFailure) {
-          emitError("Unable to sync display name. Please try again.")
+          emitError("Unable to update display name. Please try again.")
           return@launch
         }
         runCatching {
@@ -1246,7 +1410,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         selectedMonthFlow.value = YearMonthKey.current()
         evaluateActiveAlertsOnStartup(uiState.value.preferences)
         if (writtenCount > 0) {
-          emitSuccess("Demonstration data loaded and synced")
+          emitSuccess("Demonstration data loaded")
         } else {
           emitInfo("Demonstration data is already loaded")
         }
@@ -2063,7 +2227,24 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   companion object {
     private const val TAG = "BudgetWiseViewModel"
     private const val DEMO_ACCOUNT_EMAIL = "alvinj.guillermo09@gmail.com"
+    private const val LOCAL_GUEST_AVATAR_FILENAME = "local_guest_avatar.jpg"
     private const val CHAT_RESPONSE_TIMEOUT_MILLIS = 60_000L
+
+    fun provideGuestFactory(
+      application: Application,
+    ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+      @Suppress("UNCHECKED_CAST")
+      override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return BudgetWiseViewModel(
+          application = application,
+          cloudRepository = null,
+          userId = UserPreferencesRepository.LOCAL_GUEST_USER_ID,
+          accountDisplayName = null,
+          accountEmail = null,
+          accountPhotoUrl = null,
+        ) as T
+      }
+    }
 
     fun provideFactory(
       application: Application,

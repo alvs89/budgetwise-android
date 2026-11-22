@@ -878,6 +878,7 @@ fun EmptyStatePanel(
   actionLabel: String? = null,
   actionIcon: ImageVector? = null,
   onAction: (() -> Unit)? = null,
+  actionButtonModifier: Modifier = Modifier,
   secondaryActionLabel: String? = null,
   secondaryActionIcon: ImageVector? = null,
   onSecondaryAction: (() -> Unit)? = null,
@@ -925,6 +926,7 @@ fun EmptyStatePanel(
         Button(
           onClick = onAction,
           contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+          modifier = actionButtonModifier,
         ) {
           if (actionIcon != null) {
             Icon(

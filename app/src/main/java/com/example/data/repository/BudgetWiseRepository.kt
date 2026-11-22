@@ -18,6 +18,17 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+data class LocalGuestSnapshot(
+  val transactions: List<TransactionEntity>,
+  val budgets: List<BudgetEntity>,
+  val goals: List<SavingsGoalEntity>,
+  val contributions: List<SavingsContributionEntity>,
+  val customCategories: List<CategoryEntity>,
+) {
+  val totalRecordCount: Int
+    get() = transactions.size + budgets.size + goals.size + customCategories.size
+}
+
 /**
  * Single point of coordination over Room DAOs and [UserPreferencesRepository].
  *
@@ -46,6 +57,38 @@ class BudgetWiseRepository(
   val chatSessions: Flow<List<ChatSessionEntity>> = chatSessionDao.observeAllSessions()
   val chatMessages: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAllMessages()
   val financialAlerts: Flow<List<FinancialAlertEntity>> = financialAlertDao.observeAllAlerts()
+
+  /**
+   * Captures a consistent snapshot of all financial records stored locally on this device so
+   * offline guest records can be safely migrated into a signed-in account with zero data loss.
+   */
+  suspend fun getLocalGuestSnapshot(): LocalGuestSnapshot = seedMutex.withLock {
+    val tx = transactionDao.observeAllTransactions().first()
+    val budgetsList = budgetDao.observeAllBudgets().first()
+    val goalsList = savingsGoalDao.observeAllGoals().first()
+    val contribsList = savingsGoalDao.observeAllContributions().first()
+    val customCats = categoryDao.observeAllCategories().first().filter { !it.isDefault }
+    LocalGuestSnapshot(
+      transactions = tx,
+      budgets = budgetsList,
+      goals = goalsList,
+      contributions = contribsList,
+      customCategories = customCats,
+    )
+  }
+
+  /**
+   * Clears financial tables stored locally in Room after a successful guest-to-account migration.
+   */
+  suspend fun clearLocalGuestFinancialRecords() {
+    seedMutex.withLock {
+      transactionDao.deleteAll()
+      budgetDao.deleteAll()
+      savingsGoalDao.deleteAllContributions()
+      savingsGoalDao.deleteAllGoals()
+      categoryDao.deleteCustomCategories()
+    }
+  }
 
   /**
    * Populates the 30 built-in income & expense categories once on first launch so accounts start

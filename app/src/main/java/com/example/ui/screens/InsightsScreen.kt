@@ -107,7 +107,7 @@ fun InsightsScreen(
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
+      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 104.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       item {
@@ -121,7 +121,12 @@ fun InsightsScreen(
               .weight(1f)
               .padding(end = 8.dp),
           ) {
-            Text("Insights", style = MaterialTheme.typography.displaySmall)
+            AutoResizeSingleLineText(
+              text = "Insights",
+              style = MaterialTheme.typography.displaySmall,
+              color = MaterialTheme.colorScheme.onBackground,
+              minFontSize = 20.sp,
+            )
             Text(
               text = "Spending patterns and financial trends",
               style = MaterialTheme.typography.bodySmall,

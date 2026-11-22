@@ -7,6 +7,7 @@ import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.SavingsContributionEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
+import com.example.data.repository.LocalGuestSnapshot
 import com.example.domain.CurrencyOption
 import com.example.domain.GoalStatus
 import com.example.domain.YearMonthKey
@@ -1079,6 +1080,163 @@ class FirestoreSyncRepository(
       entries.size
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Local Guest -> Cloud Account Migration
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns true if the signed-in user's cloud account already contains at least one transaction,
+   * budget, or savings goal so the app can present a clear non-destructive merge dialog.
+   */
+  suspend fun hasExistingFinancialRecords(): Boolean = try {
+    val hasTx = transactionsCol.limit(1).get().await().documents.isNotEmpty()
+    if (hasTx) {
+      true
+    } else {
+      val hasBudget = budgetsCol.limit(1).get().await().documents.isNotEmpty()
+      if (hasBudget) {
+        true
+      } else {
+        goalsCol.limit(1).get().await().documents.isNotEmpty()
+      }
+    }
+  } catch (e: CancellationException) {
+    throw e
+  } catch (_: Exception) {
+    false
+  }
+
+  /**
+   * Migrates locally stored offline guest records into the authenticated user's Firestore
+   * subcollections without overwriting existing cloud budgets or duplicating custom categories.
+   */
+  suspend fun migrateLocalGuestSnapshot(snapshot: LocalGuestSnapshot): Result<Int> =
+    runCloudCatching(OperationType.WRITE, "users/$userId") {
+      initMutex.withLock {
+        ensureDefaultCategoriesExistInternal()
+
+        val existingCategoryKeys = categoriesCol.get().await().documents.mapNotNull { snap ->
+          val name = snap.getString("name")?.trim()?.lowercase(Locale.US) ?: return@mapNotNull null
+          val type = snap.getString("type")?.trim()?.uppercase(Locale.US) ?: return@mapNotNull null
+          name to type
+        }.toSet()
+
+        val existingBudgetSlots = budgetsCol.get().await().documents.mapNotNull { snap ->
+          val cat = snap.getString("category")?.trim()?.lowercase(Locale.US) ?: return@mapNotNull null
+          val y = snap.getLong("year")?.toInt() ?: return@mapNotNull null
+          val m = snap.getLong("month")?.toInt() ?: return@mapNotNull null
+          Triple(cat, y, m)
+        }.toSet()
+
+        val entries = mutableListOf<Pair<DocumentReference, Map<String, Any>>>()
+
+        snapshot.customCategories.forEach { category ->
+          val cleanName = category.name.trim().take(80)
+          if (cleanName.isNotEmpty()) {
+            val key = cleanName.lowercase(Locale.US) to category.type.name
+            if (key !in existingCategoryKeys) {
+              entries += categoriesCol.document() to mapOf(
+                "userId" to userId,
+                "name" to cleanName,
+                "type" to category.type.name,
+                "iconKey" to category.iconKey.trim().ifBlank { "category" }.take(60),
+                "colorHex" to (category.colorHex and 0xFFFFFFFFL),
+                "defaultCategory" to false,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp(),
+              )
+            }
+          }
+        }
+
+        snapshot.transactions.forEach { tx ->
+          val cleanTitle = tx.title.trim().take(120)
+          val cleanCategory = tx.category.trim().take(80)
+          if (cleanTitle.isNotEmpty() && cleanCategory.isNotEmpty() && tx.amountCentavos > 0L) {
+            entries += transactionsCol.document() to mapOf(
+              "userId" to userId,
+              "title" to cleanTitle,
+              "amountCentavos" to tx.amountCentavos,
+              "type" to tx.type.name,
+              "category" to cleanCategory,
+              "dateEpochDay" to tx.dateEpochDay,
+              "paymentMethod" to tx.paymentMethod.name,
+              "notes" to tx.notes.trim().take(500),
+              "sampleData" to tx.isSampleData,
+              "createdAt" to FieldValue.serverTimestamp(),
+              "updatedAt" to FieldValue.serverTimestamp(),
+            )
+          }
+        }
+
+        val addedBudgetSlots = mutableSetOf<Triple<String, Int, Int>>()
+        snapshot.budgets.forEach { budget ->
+          val cleanCategory = budget.category.trim().take(80)
+          val slot = Triple(cleanCategory.lowercase(Locale.US), budget.year, budget.month)
+          if (
+            cleanCategory.isNotEmpty() &&
+            budget.limitCentavos > 0L &&
+            budget.year in 2000..2100 &&
+            budget.month in 1..12 &&
+            slot !in existingBudgetSlots &&
+            addedBudgetSlots.add(slot)
+          ) {
+            entries += budgetsCol.document() to mapOf(
+              "userId" to userId,
+              "category" to cleanCategory,
+              "limitCentavos" to budget.limitCentavos,
+              "year" to budget.year,
+              "month" to budget.month,
+              "sampleData" to budget.isSampleData,
+              "createdAt" to FieldValue.serverTimestamp(),
+              "updatedAt" to FieldValue.serverTimestamp(),
+            )
+          }
+        }
+
+        val localGoalIdToCloudDocId = mutableMapOf<Long, String>()
+        snapshot.goals.forEach { goal ->
+          val cleanName = goal.name.trim().take(100)
+          if (cleanName.isNotEmpty() && goal.targetCentavos > 0L) {
+            val goalRef = goalsCol.document()
+            localGoalIdToCloudDocId[goal.id] = goalRef.id
+            entries += goalRef to mapOf(
+              "userId" to userId,
+              "name" to cleanName,
+              "targetCentavos" to goal.targetCentavos,
+              "currentSavedCentavos" to goal.currentSavedCentavos.coerceAtLeast(0L),
+              "targetDateEpochDay" to goal.targetDateEpochDay,
+              "createdDateEpochDay" to goal.createdDateEpochDay,
+              "status" to goal.status.name,
+              "sampleData" to goal.isSampleData,
+              "createdAt" to FieldValue.serverTimestamp(),
+              "updatedAt" to FieldValue.serverTimestamp(),
+            )
+          }
+        }
+
+        snapshot.contributions.forEach { contrib ->
+          val cloudGoalDocId = localGoalIdToCloudDocId[contrib.goalId]
+          if (cloudGoalDocId != null && contrib.amountCentavos > 0L) {
+            entries += contributionsCol.document() to mapOf(
+              "userId" to userId,
+              "goalDocId" to cloudGoalDocId,
+              "amountCentavos" to contrib.amountCentavos,
+              "withdrawal" to contrib.isWithdrawal,
+              "note" to contrib.note.trim().take(300),
+              "dateEpochDay" to contrib.dateEpochDay,
+              "createdAt" to FieldValue.serverTimestamp(),
+            )
+          }
+        }
+
+        if (entries.isNotEmpty()) {
+          commitBatchSets(entries)
+          _hasServerConfirmed.value = true
+        }
+        entries.size
+      }
+    }
 
   // ---------------------------------------------------------------------------
   // Internal Batch Helpers

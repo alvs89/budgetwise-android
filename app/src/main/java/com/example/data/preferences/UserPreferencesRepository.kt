@@ -29,6 +29,8 @@ data class UserPreferences(
   val hasCompletedTour: Boolean = false,
   val hasSeededInitialData: Boolean = false,
   val hasAutoSeededDemoAccount: Boolean = false,
+  val isOfflineGuestMode: Boolean = false,
+  val hasDismissedLocalMigration: Boolean = false,
   val isBalanceHidden: Boolean = false,
   val appLockEnabled: Boolean = false,
   val biometricUnlockEnabled: Boolean = false,
@@ -47,22 +49,29 @@ data class UserPreferences(
  * Device-local Jetpack DataStore preferences repository.
  *
  * Security-sensitive PIN lock keys and Spotlight Tour completion are scoped per authenticated
- * [userId] so a newly signed-in Google account always starts with PIN lock OFF (`false`) and
- * never inherits another account's lock state or tour state.
+ * [userId] (or [LOCAL_GUEST_USER_ID] for offline guest mode) so each account maintains its own
+ * lock state and onboarding tour state.
  */
 class UserPreferencesRepository(
   private val context: Context,
   private val userId: String? = null,
 ) {
+  private val isLocalGuest: Boolean = userId == LOCAL_GUEST_USER_ID
   private val uidSuffix: String = userId?.takeIf { it.isNotBlank() }?.let { "_$it" }.orEmpty()
 
-  private val displayNameKey = stringPreferencesKey("display_name")
+  private val displayNameKey = if (isLocalGuest) {
+    stringPreferencesKey("display_name_$LOCAL_GUEST_USER_ID")
+  } else {
+    stringPreferencesKey("display_name")
+  }
   private val preferredCurrencyKey = stringPreferencesKey("preferred_currency")
   private val themeModeKey = stringPreferencesKey("theme_mode")
   private val onboardingCompletedKey = booleanPreferencesKey("onboarding_completed$uidSuffix")
   private val hasCompletedTourKey = booleanPreferencesKey("spotlight_tour_completed$uidSuffix")
   private val hasSeededInitialDataKey = booleanPreferencesKey("has_seeded_initial_data")
   private val hasAutoSeededDemoAccountKey = booleanPreferencesKey("demo_account_auto_seeded$uidSuffix")
+  private val offlineGuestModeKey = booleanPreferencesKey("offline_guest_mode")
+  private val hasDismissedLocalMigrationKey = booleanPreferencesKey("dismissed_local_migration$uidSuffix")
   private val isBalanceHiddenKey = booleanPreferencesKey("is_balance_hidden$uidSuffix")
   private val appLockEnabledKey = booleanPreferencesKey("app_lock_enabled$uidSuffix")
   private val biometricUnlockEnabledKey = booleanPreferencesKey("biometric_unlock_enabled$uidSuffix")
@@ -93,14 +102,21 @@ class UserPreferencesRepository(
     val storedPinHash = prefs[pinHashRecordKey]?.takeIf { it.isNotBlank() }
     // Dual guardrail: PIN lock is strictly OFF unless explicitly enabled AND a valid PIN hash exists
     val effectiveAppLockEnabled = (prefs[appLockEnabledKey] ?: false) && storedPinHash != null
+    val resolvedDisplayName = if (isLocalGuest) {
+      prefs[displayNameKey]?.trim().orEmpty()
+    } else {
+      prefs[displayNameKey]?.takeIf { it.isNotBlank() } ?: "Alex"
+    }
     UserPreferences(
-      displayName = prefs[displayNameKey]?.takeIf { it.isNotBlank() } ?: "Alex",
+      displayName = resolvedDisplayName,
       preferredCurrency = prefs[preferredCurrencyKey] ?: CurrencyOption.PHP.code,
       themeMode = themeMode,
       onboardingCompleted = prefs[onboardingCompletedKey] ?: false,
       hasCompletedTour = prefs[hasCompletedTourKey] ?: false,
       hasSeededInitialData = prefs[hasSeededInitialDataKey] ?: false,
       hasAutoSeededDemoAccount = prefs[hasAutoSeededDemoAccountKey] ?: false,
+      isOfflineGuestMode = prefs[offlineGuestModeKey] ?: false,
+      hasDismissedLocalMigration = prefs[hasDismissedLocalMigrationKey] ?: false,
       isBalanceHidden = prefs[isBalanceHiddenKey] ?: false,
       appLockEnabled = effectiveAppLockEnabled,
       biometricUnlockEnabled = effectiveAppLockEnabled && (prefs[biometricUnlockEnabledKey] ?: false),
@@ -124,7 +140,8 @@ class UserPreferencesRepository(
 
   suspend fun updateDisplayName(name: String) {
     context.dataStore.edit { prefs ->
-      prefs[displayNameKey] = name.trim().ifBlank { "Alex" }
+      val trimmed = name.trim()
+      prefs[displayNameKey] = if (isLocalGuest) trimmed else trimmed.ifBlank { "Alex" }
     }
   }
 
@@ -172,6 +189,18 @@ class UserPreferencesRepository(
   suspend fun markDemoAccountAutoSeeded() {
     context.dataStore.edit { prefs ->
       prefs[hasAutoSeededDemoAccountKey] = true
+    }
+  }
+
+  suspend fun setOfflineGuestMode(enabled: Boolean) {
+    context.dataStore.edit { prefs ->
+      prefs[offlineGuestModeKey] = enabled
+    }
+  }
+
+  suspend fun setDismissedLocalMigration(dismissed: Boolean) {
+    context.dataStore.edit { prefs ->
+      prefs[hasDismissedLocalMigrationKey] = dismissed
     }
   }
 
@@ -270,5 +299,9 @@ class UserPreferencesRepository(
         prefs[lastActiveUserIdKey] = uid
       }
     }
+  }
+
+  companion object {
+    const val LOCAL_GUEST_USER_ID = "local_guest"
   }
 }

@@ -10,8 +10,9 @@
     <string name="nav_settings">Settings</string>
     <string name="fab_add_transaction">Add Transaction</string>
     <string name="cash_flow_disclaimer">Net cash flow is a summary of recorded transactions, not a verified bank balance.</string>
-    <string name="privacy_notice">Your financial records sync privately to your Google account with offline access. BudgetWise never requests bank credentials, and your 4-Digit PIN stays strictly on this device.</string>
-    <string name="app_info_footer">BudgetWise · Version 1.0 · Private Cloud Sync</string>
+    <string name="privacy_notice">Your financial records stay private and backed up to your Google account with offline access. BudgetWise never asks for bank passwords, and your 4-Digit PIN stays on this phone.</string>
+    <string name="privacy_notice_local">Everything you log stays privately on this phone. Sign in anytime above to back up your records across devices. BudgetWise never asks for bank passwords.</string>
+    <string name="app_info_footer">BudgetWise · Version 1.0</string>
     <string name="demo_badge">Demo</string>
     <string name="chat_fab_label">Open financial assistant chat</string>
     <string name="chat_title">BudgetWise Assistant</string>
@@ -82,33 +83,44 @@
     <string name="help_replay_welcome_subtitle">Revisit the interactive spotlight tour on your Home dashboard</string>
     <string name="help_replay_welcome_cd">Replay App Tour</string>
 
-    <!-- Google Sign-In & Multi-Device Sync -->
-    <string name="sign_in_headline">Take control of your money, on every phone</string>
-    <string name="sign_in_subtitle">Sign in with Google to privately back up and sync your transactions, budgets, goals, and categories across devices.</string>
+    <!-- Sign-In & Offline Access -->
+    <string name="sign_in_headline">Smart, private personal finance</string>
+    <string name="sign_in_subtitle">Track expenses, set monthly budgets, and grow your savings with ease.</string>
+    <string name="sign_in_upgrade_headline">Back up your BudgetWise records</string>
+    <string name="sign_in_upgrade_subtitle">Sign in with Google to keep your transactions, budgets, and goals safe across devices.</string>
     <string name="sign_in_cta_google">Continue with Google</string>
     <string name="sign_in_loading">Signing in…</string>
-    <string name="sign_in_feature_sync_title">Multi-Device Cloud Sync</string>
-    <string name="sign_in_feature_sync_desc">Sign in on another phone and pick up right where you left off.</string>
-    <string name="sign_in_feature_offline_title">Works Offline Anytime</string>
-    <string name="sign_in_feature_offline_desc">Log expenses anywhere; changes sync automatically when back online.</string>
+    <string name="sign_in_or_divider">or</string>
+    <string name="sign_in_continue_offline">Continue Without an Account</string>
+    <string name="sign_in_offline_caption">Saved privately on this phone · Back up anytime in Settings</string>
+    <string name="sign_in_feature_sync_title">Use on Any Phone</string>
+    <string name="sign_in_feature_sync_desc">Sign in on a new phone and pick up right where you left off.</string>
+    <string name="sign_in_feature_offline_title">Works Without Internet</string>
+    <string name="sign_in_feature_offline_desc">Log spending anywhere; everything stays available even offline.</string>
     <string name="sign_in_feature_private_title">Private &amp; Bank-Free</string>
-    <string name="sign_in_feature_private_desc">Only your Google account can read your ledger. PIN lock stays on-device.</string>
+    <string name="sign_in_feature_private_desc">Only you can view your finances. PIN lock stays strictly on your phone.</string>
     <string name="sign_in_footer_note">BudgetWise never asks for bank passwords or card numbers.</string>
 
-    <!-- Settings Account, Sync & Profile Photo -->
-    <string name="settings_cloud_account_title">Cloud Sync Account</string>
-    <string name="settings_sync_status_synced">Cloud Synced</string>
-    <string name="settings_sync_status_syncing">Syncing…</string>
+    <!-- Settings Account, Status & Profile Photo -->
+    <string name="settings_cloud_account_title">Account</string>
+    <string name="settings_local_account_title">Local Account</string>
+    <string name="settings_local_device_pill">On This Device</string>
+    <string name="settings_local_sign_in_cta">Sign In to Back Up</string>
+    <string name="settings_local_sign_in_hint">Keep your records safe across phones</string>
+    <string name="settings_sync_status_synced">Backed Up</string>
+    <string name="settings_sync_status_syncing">Updating…</string>
     <string name="settings_sync_status_offline">Offline</string>
-    <string name="settings_sync_status_error">Sync Issue · Tap to retry</string>
-    <string name="settings_sync_tap_hint">Tap status to verify sync</string>
+    <string name="settings_sync_status_error">Couldn\'t update · Tap to retry</string>
+    <string name="settings_sync_tap_hint">Tap to check connection</string>
     <string name="settings_sign_out_action">Sign Out</string>
     <string name="settings_sign_out_confirm_title">Sign Out of BudgetWise?</string>
-    <string name="settings_sign_out_confirm_message">Your synced financial records remain safely backed up to your Google account. You can sign back in on this phone or any other device anytime.</string>
-    <string name="settings_footer_cloud_badge">Private Cloud Sync · Offline Ready</string>
+    <string name="settings_sign_out_confirm_message">Your records stay safely backed up to your Google account. You can sign back in on this phone or any other device anytime.</string>
+    <string name="settings_footer_cloud_badge">Private &amp; Backed Up · Works Offline</string>
+    <string name="settings_footer_local_badge">Saved on This Phone · Private</string>
     <string name="settings_avatar_edit_cd">Change profile photo</string>
     <string name="settings_photo_dialog_title">Profile Photo</string>
-    <string name="settings_photo_dialog_subtitle">Your avatar syncs across all devices signed in with this Google account.</string>
+    <string name="settings_photo_dialog_subtitle">Your photo appears on every phone where you sign in with this account.</string>
+    <string name="settings_photo_dialog_subtitle_local">Your photo is saved privately on this phone.</string>
     <string name="settings_photo_choose_gallery">Choose Photo</string>
     <string name="settings_photo_use_google">Use Google Account Photo</string>
     <string name="settings_photo_remove">Remove Profile Photo</string>
@@ -118,6 +130,21 @@
     <string name="crop_photo_save">Save Photo</string>
     <string name="crop_photo_saving">Saving…</string>
     <string name="crop_photo_read_error">Unable to read selected image. Please try another photo.</string>
+
+    <!-- Local-to-Account Migration Dialog -->
+    <string name="migration_merge_title">Combine Local &amp; Account Records?</string>
+    <string name="migration_merge_message_one">Your Google account already has saved records, and you have 1 offline entry on this phone. Would you like to merge them together without overwriting existing data?</string>
+    <string name="migration_merge_message_many">Your Google account already has saved records, and you have %1$d offline entries on this phone. Would you like to merge them together without overwriting existing data?</string>
+    <string name="migration_merge_confirm">Merge &amp; Keep Both</string>
+    <string name="migration_merge_secondary">Load Account Only</string>
+    <string name="migration_merge_discard_note">Choosing \"Load Account Only\" clears the temporary offline entries on this phone and keeps only your Google account.</string>
+    <string name="migration_upload_title">Back Up Your Device Records?</string>
+    <string name="migration_upload_message_one">You have 1 entry saved on this phone. Would you like to upload it to your Google account so it stays backed up?</string>
+    <string name="migration_upload_message_many">You have %1$d entries saved on this phone. Would you like to upload them to your Google account so they stay backed up?</string>
+    <string name="migration_upload_confirm">Upload &amp; Back Up</string>
+    <string name="migration_upload_secondary">Start Fresh</string>
+    <string name="migration_upload_discard_note">Choosing \"Start Fresh\" clears the entries on this phone and starts with an empty account.</string>
+    <string name="migration_dialog_migrating">Saving records…</string>
 
     <!-- Live In-App 7-Step Tab-Synchronized Spotlight Tour -->
     <string name="spotlight_step_counter">%1$d of %2$d</string>
@@ -144,6 +171,6 @@
     <string name="settings_load_demo_action">Load Demonstration Data</string>
     <string name="settings_load_demo_loading">Loading Demonstration Data…</string>
     <string name="settings_load_demo_confirm_title">Load Demonstration Data?</string>
-    <string name="settings_load_demo_confirm_message">Populate your account with 6 months of realistic income, expenses, monthly category budgets, and savings goals with contribution history. All records sync privately to your account without removing existing entries.</string>
+    <string name="settings_load_demo_confirm_message">Populate your account with 6 months of realistic income, expenses, monthly category budgets, and savings goals with contribution history without removing your existing entries.</string>
     <string name="settings_load_demo_confirm_cta">Load Data</string>
 </resources>
