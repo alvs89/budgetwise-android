@@ -426,4 +426,1160 @@ object SampleDataSeeder {
       SavingsContributionEntity(goalId = goalIds[3], amountCentavos = 12_000_00L, isWithdrawal = false, note = "Tuition & certification reserve", dateEpochDay = d1),
     )
   }
+
+  /**
+   * Practical, multi-month realistic personal finance dataset for live account demonstrations.
+   * Covers 6 consecutive months of income & expenses across varied categories and payment methods,
+   * current + previous month budgets spanning every health tier (Normal, Approaching, Near Limit,
+   * Exceeded), and 4 savings goals (3 active, 1 completed) with full contribution histories.
+   */
+  fun demonstrationDataset(
+    referenceMonth: YearMonthKey = YearMonthKey.current(),
+  ): DemonstrationDataset {
+    val m0 = referenceMonth
+    val m1 = m0.previous()
+    val m2 = m1.previous()
+    val m3 = m2.previous()
+    val m4 = m3.previous()
+    val m5 = m4.previous()
+
+    val today = Calendar.getInstance()
+    val isCurrentCalendarMonth =
+      today.get(Calendar.YEAR) == m0.year && (today.get(Calendar.MONTH) + 1) == m0.month
+    val maxCurrDay = if (isCurrentCalendarMonth) {
+      today.get(Calendar.DAY_OF_MONTH).coerceAtLeast(1)
+    } else {
+      28
+    }
+
+    fun dayIn(ym: YearMonthKey, day: Int, cap: Int = 28): Long =
+      epochDayFromDate(ym.year, ym.month, day.coerceIn(1, cap))
+
+    fun currDay(day: Int): Long = dayIn(m0, day, maxCurrDay)
+
+    val transactions = listOf(
+      // =========================================================================
+      // Current Month (m0): Income ₱64,500.00 | Expenses ₱42,480.00 | Net +₱22,020.00
+      // =========================================================================
+      DemoTransactionRecord(
+        docId = "demo_tx_01",
+        entity = TransactionEntity(
+          title = "1st Cutoff Net Salary",
+          amountCentavos = 26_500_00L,
+          type = TransactionType.INCOME,
+          category = "Salary",
+          dateEpochDay = currDay(1),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Bi-monthly payroll direct deposit",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_02",
+        entity = TransactionEntity(
+          title = "Condo Rent Share",
+          amountCentavos = 12_000_00L,
+          type = TransactionType.EXPENSE,
+          category = "Housing",
+          dateEpochDay = currDay(1),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Monthly residential lease payment",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_03",
+        entity = TransactionEntity(
+          title = "SM Supermarket Weekly Haul",
+          amountCentavos = 2_840_00L,
+          type = TransactionType.EXPENSE,
+          category = "Groceries",
+          dateEpochDay = currDay(2),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Rice, chicken breast, vegetables & pantry staples",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_04",
+        entity = TransactionEntity(
+          title = "Anytime Fitness Monthly Dues",
+          amountCentavos = 1_500_00L,
+          type = TransactionType.EXPENSE,
+          category = "Fitness & Sports",
+          dateEpochDay = currDay(2),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "Monthly gym membership auto-debit",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_05",
+        entity = TransactionEntity(
+          title = "Meralco Electric Bill",
+          amountCentavos = 3_920_00L,
+          type = TransactionType.EXPENSE,
+          category = "Bills and Utilities",
+          dateEpochDay = currDay(3),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Monthly residential electricity billing",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_06",
+        entity = TransactionEntity(
+          title = "Beep Card & MRT-3 Load",
+          amountCentavos = 940_00L,
+          type = TransactionType.EXPENSE,
+          category = "Transportation",
+          dateEpochDay = currDay(3),
+          paymentMethod = PaymentMethod.MAYA,
+          notes = "Weekday rail & bus commute fare load",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_07",
+        entity = TransactionEntity(
+          title = "Team Lunch at Manam",
+          amountCentavos = 1_250_00L,
+          type = TransactionType.EXPENSE,
+          category = "Food and Dining",
+          dateEpochDay = currDay(4),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "Sprint release lunch with workmates",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_08",
+        entity = TransactionEntity(
+          title = "PLDT Home Fiber Plan",
+          amountCentavos = 1_699_00L,
+          type = TransactionType.EXPENSE,
+          category = "Internet & Load",
+          dateEpochDay = currDay(5),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Monthly 200 Mbps home broadband",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_09",
+        entity = TransactionEntity(
+          title = "Iced Spanish Latte & Croissant",
+          amountCentavos = 420_00L,
+          type = TransactionType.EXPENSE,
+          category = "Coffee & Snacks",
+          dateEpochDay = currDay(5),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Remote work coffee shop session",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_10",
+        entity = TransactionEntity(
+          title = "Maynilad Water & Condo Dues",
+          amountCentavos = 930_00L,
+          type = TransactionType.EXPENSE,
+          category = "Bills and Utilities",
+          dateEpochDay = currDay(6),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Monthly water bill and building maintenance",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_11",
+        entity = TransactionEntity(
+          title = "Spotify, YouTube & Cloud Storage",
+          amountCentavos = 649_00L,
+          type = TransactionType.EXPENSE,
+          category = "Subscriptions",
+          dateEpochDay = currDay(7),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "Music, ad-free video, and 200GB cloud backup",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_12",
+        entity = TransactionEntity(
+          title = "UI/UX Design Consultation",
+          amountCentavos = 9_500_00L,
+          type = TransactionType.INCOME,
+          category = "Freelance",
+          dateEpochDay = currDay(8),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Mobile wireframe review and design system handoff",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_13",
+        entity = TransactionEntity(
+          title = "GrabFood Weekday Dinners",
+          amountCentavos = 1_120_00L,
+          type = TransactionType.EXPENSE,
+          category = "Food and Dining",
+          dateEpochDay = currDay(9),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Late-night meal deliveries during deadline week",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_14",
+        entity = TransactionEntity(
+          title = "Puregold Household Restock",
+          amountCentavos = 1_680_00L,
+          type = TransactionType.EXPENSE,
+          category = "Groceries",
+          dateEpochDay = currDay(10),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Laundry detergent, toiletries & breakfast oats",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_15",
+        entity = TransactionEntity(
+          title = "Uniqlo Work Shirts & Basics",
+          amountCentavos = 2_190_00L,
+          type = TransactionType.EXPENSE,
+          category = "Shopping",
+          dateEpochDay = currDay(11),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "Sale wardrobe refresh for office days",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_16",
+        entity = TransactionEntity(
+          title = "Smart Postpaid & Mobile Data",
+          amountCentavos = 500_00L,
+          type = TransactionType.EXPENSE,
+          category = "Internet & Load",
+          dateEpochDay = currDay(11),
+          paymentMethod = PaymentMethod.MAYA,
+          notes = "Monthly mobile voice and 5G data plan",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_17",
+        entity = TransactionEntity(
+          title = "GrabCar Rainy Commutes",
+          amountCentavos = 1_450_00L,
+          type = TransactionType.EXPENSE,
+          category = "Transportation",
+          dateEpochDay = currDay(12),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Late evening rides home during heavy rain",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_18",
+        entity = TransactionEntity(
+          title = "Afternoon Matcha & Pastries",
+          amountCentavos = 490_00L,
+          type = TransactionType.EXPENSE,
+          category = "Coffee & Snacks",
+          dateEpochDay = currDay(13),
+          paymentMethod = PaymentMethod.MAYA,
+          notes = "Coffee catch-up with college friends",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_19",
+        entity = TransactionEntity(
+          title = "Sunday Family Samgyupsal",
+          amountCentavos = 1_580_00L,
+          type = TransactionType.EXPENSE,
+          category = "Food and Dining",
+          dateEpochDay = currDay(14),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Weekend dinner treat with family",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_20",
+        entity = TransactionEntity(
+          title = "Mercury Drug Vitamins & Checkup",
+          amountCentavos = 1_450_00L,
+          type = TransactionType.EXPENSE,
+          category = "Healthcare",
+          dateEpochDay = currDay(14),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Vitamin C, D3, and routine dental co-pay",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_21",
+        entity = TransactionEntity(
+          title = "2nd Cutoff Net Salary",
+          amountCentavos = 26_500_00L,
+          type = TransactionType.INCOME,
+          category = "Salary",
+          dateEpochDay = currDay(15),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Bi-monthly payroll direct deposit",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_22",
+        entity = TransactionEntity(
+          title = "Netflix Standard Plan",
+          amountCentavos = 499_00L,
+          type = TransactionType.EXPENSE,
+          category = "Subscriptions",
+          dateEpochDay = currDay(15),
+          paymentMethod = PaymentMethod.MAYA,
+          notes = "Monthly streaming subscription",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_23",
+        entity = TransactionEntity(
+          title = "Shopee Desk Organizer & USB-C Hub",
+          amountCentavos = 1_300_00L,
+          type = TransactionType.EXPENSE,
+          category = "Shopping",
+          dateEpochDay = currDay(16),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Work-from-home cable tray and adapter",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_24",
+        entity = TransactionEntity(
+          title = "Barbershop Haircut & Skincare",
+          amountCentavos = 1_193_00L,
+          type = TransactionType.EXPENSE,
+          category = "Personal Care",
+          dateEpochDay = currDay(16),
+          paymentMethod = PaymentMethod.CASH,
+          notes = "Monthly haircut and sunscreen refill",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_25",
+        entity = TransactionEntity(
+          title = "Weekend Market Fresh Produce",
+          amountCentavos = 900_00L,
+          type = TransactionType.EXPENSE,
+          category = "Groceries",
+          dateEpochDay = currDay(17),
+          paymentMethod = PaymentMethod.CASH,
+          notes = "Fresh fruits, farm eggs, and cooking herbs",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_26",
+        entity = TransactionEntity(
+          title = "Digital Bank Interest & Cashback",
+          amountCentavos = 2_000_00L,
+          type = TransactionType.INCOME,
+          category = "Investments",
+          dateEpochDay = currDay(18),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "High-yield savings interest and card rebates",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_27",
+        entity = TransactionEntity(
+          title = "Angkas & Weekend Rides",
+          amountCentavos = 850_00L,
+          type = TransactionType.EXPENSE,
+          category = "Transportation",
+          dateEpochDay = currDay(18),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Quick errands across Makati & BGC",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_28",
+        entity = TransactionEntity(
+          title = "Cold Brew & Afternoon Merienda",
+          amountCentavos = 430_00L,
+          type = TransactionType.EXPENSE,
+          category = "Coffee & Snacks",
+          dateEpochDay = currDay(19),
+          paymentMethod = PaymentMethod.CASH,
+          notes = "Office coffee run and snacks",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_29",
+        entity = TransactionEntity(
+          title = "Weekday Office Lunches",
+          amountCentavos = 700_00L,
+          type = TransactionType.EXPENSE,
+          category = "Food and Dining",
+          dateEpochDay = currDay(20),
+          paymentMethod = PaymentMethod.CASH,
+          notes = "Cafeteria meals during on-site workdays",
+          isSampleData = false,
+        ),
+      ),
+
+      // =========================================================================
+      // 1 Month Ago (m1): Income ₱60,000.00 | Expenses ₱38,950.00
+      // =========================================================================
+      DemoTransactionRecord(
+        docId = "demo_tx_30",
+        entity = TransactionEntity(
+          title = "Monthly Net Salary",
+          amountCentavos = 53_000_00L,
+          type = TransactionType.INCOME,
+          category = "Salary",
+          dateEpochDay = dayIn(m1, 15),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Combined bi-monthly payroll",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_31",
+        entity = TransactionEntity(
+          title = "Landing Page Redesign Project",
+          amountCentavos = 7_000_00L,
+          type = TransactionType.INCOME,
+          category = "Freelance",
+          dateEpochDay = dayIn(m1, 22),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Client website polish milestone",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_32",
+        entity = TransactionEntity(
+          title = "Condo Rent Share",
+          amountCentavos = 12_000_00L,
+          type = TransactionType.EXPENSE,
+          category = "Housing",
+          dateEpochDay = dayIn(m1, 1),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Monthly apartment lease",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_33",
+        entity = TransactionEntity(
+          title = "Supermarket Groceries",
+          amountCentavos = 5_650_00L,
+          type = TransactionType.EXPENSE,
+          category = "Groceries",
+          dateEpochDay = dayIn(m1, 7),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Monthly groceries and household supplies",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_34",
+        entity = TransactionEntity(
+          title = "Restaurants & Food Delivery",
+          amountCentavos = 4_100_00L,
+          type = TransactionType.EXPENSE,
+          category = "Food and Dining",
+          dateEpochDay = dayIn(m1, 13),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Weekday lunches and weekend dining",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_35",
+        entity = TransactionEntity(
+          title = "Electric & Water Utilities",
+          amountCentavos = 4_720_00L,
+          type = TransactionType.EXPENSE,
+          category = "Bills and Utilities",
+          dateEpochDay = dayIn(m1, 5),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Meralco + Maynilad bills",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_36",
+        entity = TransactionEntity(
+          title = "Fiber Internet & Mobile Plan",
+          amountCentavos = 2_199_00L,
+          type = TransactionType.EXPENSE,
+          category = "Internet & Load",
+          dateEpochDay = dayIn(m1, 6),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Broadband and mobile postpaid",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_37",
+        entity = TransactionEntity(
+          title = "Commute & Ride-Hailing",
+          amountCentavos = 3_480_00L,
+          type = TransactionType.EXPENSE,
+          category = "Transportation",
+          dateEpochDay = dayIn(m1, 18),
+          paymentMethod = PaymentMethod.MAYA,
+          notes = "MRT load, Grab, and Angkas trips",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_38",
+        entity = TransactionEntity(
+          title = "Online Course & Tech Books",
+          amountCentavos = 2_850_00L,
+          type = TransactionType.EXPENSE,
+          category = "Education",
+          dateEpochDay = dayIn(m1, 19),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "Kotlin & system design reference books",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_39",
+        entity = TransactionEntity(
+          title = "Movies, Subscriptions & Gym",
+          amountCentavos = 3_951_00L,
+          type = TransactionType.EXPENSE,
+          category = "Entertainment",
+          dateEpochDay = dayIn(m1, 24),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "IMAX tickets, streaming, and fitness dues",
+          isSampleData = false,
+        ),
+      ),
+
+      // =========================================================================
+      // 2 Months Ago (m2): Income ₱71,000.00 (with Quarterly Bonus) | Expenses ₱45,200.00
+      // =========================================================================
+      DemoTransactionRecord(
+        docId = "demo_tx_40",
+        entity = TransactionEntity(
+          title = "Monthly Net Salary",
+          amountCentavos = 53_000_00L,
+          type = TransactionType.INCOME,
+          category = "Salary",
+          dateEpochDay = dayIn(m2, 15),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Combined bi-monthly payroll",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_41",
+        entity = TransactionEntity(
+          title = "Quarterly Performance Bonus",
+          amountCentavos = 18_000_00L,
+          type = TransactionType.INCOME,
+          category = "Bonus",
+          dateEpochDay = dayIn(m2, 25),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Q3 team delivery performance incentive",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_42",
+        entity = TransactionEntity(
+          title = "Condo Rent Share",
+          amountCentavos = 12_000_00L,
+          type = TransactionType.EXPENSE,
+          category = "Housing",
+          dateEpochDay = dayIn(m2, 1),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Monthly lease",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_43",
+        entity = TransactionEntity(
+          title = "Groceries & Home Supplies",
+          amountCentavos = 6_100_00L,
+          type = TransactionType.EXPENSE,
+          category = "Groceries",
+          dateEpochDay = dayIn(m2, 8),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Bulk pantry restock",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_44",
+        entity = TransactionEntity(
+          title = "Dining & Coffee Outings",
+          amountCentavos = 5_300_00L,
+          type = TransactionType.EXPENSE,
+          category = "Food and Dining",
+          dateEpochDay = dayIn(m2, 14),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "Birthday dinner and team lunches",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_45",
+        entity = TransactionEntity(
+          title = "Utilities & Broadband",
+          amountCentavos = 6_900_00L,
+          type = TransactionType.EXPENSE,
+          category = "Bills and Utilities",
+          dateEpochDay = dayIn(m2, 6),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Electric, water, and home fiber",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_46",
+        entity = TransactionEntity(
+          title = "Weekend Tagaytay & Beach Trip",
+          amountCentavos = 8_400_00L,
+          type = TransactionType.EXPENSE,
+          category = "Travel",
+          dateEpochDay = dayIn(m2, 20),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "Resort stay, fuel split, and dining",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_47",
+        entity = TransactionEntity(
+          title = "Noise-Canceling Earbuds & Transit",
+          amountCentavos = 6_500_00L,
+          type = TransactionType.EXPENSE,
+          category = "Electronics",
+          dateEpochDay = dayIn(m2, 22),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Commute earbuds replacement + fare load",
+          isSampleData = false,
+        ),
+      ),
+
+      // =========================================================================
+      // 3 Months Ago (m3): Income ₱58,500.00 | Expenses ₱37,100.00
+      // =========================================================================
+      DemoTransactionRecord(
+        docId = "demo_tx_48",
+        entity = TransactionEntity(
+          title = "Monthly Net Salary",
+          amountCentavos = 53_000_00L,
+          type = TransactionType.INCOME,
+          category = "Salary",
+          dateEpochDay = dayIn(m3, 15),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Bi-monthly payroll credit",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_49",
+        entity = TransactionEntity(
+          title = "Weekend Technical Mentoring",
+          amountCentavos = 5_500_00L,
+          type = TransactionType.INCOME,
+          category = "Freelance",
+          dateEpochDay = dayIn(m3, 21),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Bootcamp code review sessions",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_50",
+        entity = TransactionEntity(
+          title = "Condo Rent Share",
+          amountCentavos = 12_000_00L,
+          type = TransactionType.EXPENSE,
+          category = "Housing",
+          dateEpochDay = dayIn(m3, 1),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Monthly apartment rent",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_51",
+        entity = TransactionEntity(
+          title = "Groceries & Meal Prep",
+          amountCentavos = 5_800_00L,
+          type = TransactionType.EXPENSE,
+          category = "Groceries",
+          dateEpochDay = dayIn(m3, 9),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Weekly supermarket runs",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_52",
+        entity = TransactionEntity(
+          title = "Utilities, Internet & Mobile",
+          amountCentavos = 6_850_00L,
+          type = TransactionType.EXPENSE,
+          category = "Bills and Utilities",
+          dateEpochDay = dayIn(m3, 6),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Power, water, fiber, and mobile plan",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_53",
+        entity = TransactionEntity(
+          title = "Dining, Commute & Healthcare",
+          amountCentavos = 8_250_00L,
+          type = TransactionType.EXPENSE,
+          category = "Food and Dining",
+          dateEpochDay = dayIn(m3, 16),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Monthly dining out, transit, and pharmacy",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_54",
+        entity = TransactionEntity(
+          title = "Aircon Cleaning & Home Repairs",
+          amountCentavos = 4_200_00L,
+          type = TransactionType.EXPENSE,
+          category = "Repairs",
+          dateEpochDay = dayIn(m3, 23),
+          paymentMethod = PaymentMethod.CASH,
+          notes = "Preventive AC maintenance and faucet fix",
+          isSampleData = false,
+        ),
+      ),
+
+      // =========================================================================
+      // 4 Months Ago (m4): Income ₱56,000.00 | Expenses ₱36,400.00
+      // =========================================================================
+      DemoTransactionRecord(
+        docId = "demo_tx_55",
+        entity = TransactionEntity(
+          title = "Monthly Net Salary",
+          amountCentavos = 53_000_00L,
+          type = TransactionType.INCOME,
+          category = "Salary",
+          dateEpochDay = dayIn(m4, 15),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Payroll deposit",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_56",
+        entity = TransactionEntity(
+          title = "Dividend & Bank Interest",
+          amountCentavos = 3_000_00L,
+          type = TransactionType.INCOME,
+          category = "Investments",
+          dateEpochDay = dayIn(m4, 24),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Quarterly REIT dividend & digital bank interest",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_57",
+        entity = TransactionEntity(
+          title = "Condo Rent & Utilities",
+          amountCentavos = 18_400_00L,
+          type = TransactionType.EXPENSE,
+          category = "Housing",
+          dateEpochDay = dayIn(m4, 2),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Rent, electricity, water & fiber bundle",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_58",
+        entity = TransactionEntity(
+          title = "Groceries & Dining",
+          amountCentavos = 9_600_00L,
+          type = TransactionType.EXPENSE,
+          category = "Groceries",
+          dateEpochDay = dayIn(m4, 12),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Monthly food and groceries",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_59",
+        entity = TransactionEntity(
+          title = "Commute, Shopping & Gifts",
+          amountCentavos = 8_400_00L,
+          type = TransactionType.EXPENSE,
+          category = "Shopping",
+          dateEpochDay = dayIn(m4, 19),
+          paymentMethod = PaymentMethod.CREDIT_CARD,
+          notes = "Running shoes, family gift, and commute load",
+          isSampleData = false,
+        ),
+      ),
+
+      // =========================================================================
+      // 5 Months Ago (m5): Income ₱54,500.00 | Expenses ₱35,200.00
+      // =========================================================================
+      DemoTransactionRecord(
+        docId = "demo_tx_60",
+        entity = TransactionEntity(
+          title = "Monthly Net Salary",
+          amountCentavos = 53_000_00L,
+          type = TransactionType.INCOME,
+          category = "Salary",
+          dateEpochDay = dayIn(m5, 15),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Payroll deposit",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_61",
+        entity = TransactionEntity(
+          title = "Expense Reimbursement & Rebates",
+          amountCentavos = 1_500_00L,
+          type = TransactionType.INCOME,
+          category = "Gifts & Refunds",
+          dateEpochDay = dayIn(m5, 22),
+          paymentMethod = PaymentMethod.GCASH,
+          notes = "Work travel reimbursement",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_62",
+        entity = TransactionEntity(
+          title = "Condo Rent & Utilities",
+          amountCentavos = 18_100_00L,
+          type = TransactionType.EXPENSE,
+          category = "Housing",
+          dateEpochDay = dayIn(m5, 2),
+          paymentMethod = PaymentMethod.BANK_TRANSFER,
+          notes = "Monthly housing and utility bills",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_63",
+        entity = TransactionEntity(
+          title = "Groceries & Daily Meals",
+          amountCentavos = 9_400_00L,
+          type = TransactionType.EXPENSE,
+          category = "Groceries",
+          dateEpochDay = dayIn(m5, 11),
+          paymentMethod = PaymentMethod.DEBIT_CARD,
+          notes = "Monthly groceries and office meals",
+          isSampleData = false,
+        ),
+      ),
+      DemoTransactionRecord(
+        docId = "demo_tx_64",
+        entity = TransactionEntity(
+          title = "Commute, Health & Subscriptions",
+          amountCentavos = 7_700_00L,
+          type = TransactionType.EXPENSE,
+          category = "Transportation",
+          dateEpochDay = dayIn(m5, 18),
+          paymentMethod = PaymentMethod.MAYA,
+          notes = "Transit load, annual clinic lab, and plans",
+          isSampleData = false,
+        ),
+      ),
+    )
+
+    // Current Month (8 budgets across all 4 health tiers) + Previous Month (7 budgets)
+    val budgets = listOf(
+      // Current Month (m0)
+      DemoBudgetRecord(
+        docId = "demo_budget_01",
+        entity = BudgetEntity(category = "Food and Dining", limitCentavos = 4_200_00L, year = m0.year, month = m0.month, isSampleData = false),
+      ), // ₱4,650 / ₱4,200 -> 110.7% EXCEEDED
+      DemoBudgetRecord(
+        docId = "demo_budget_02",
+        entity = BudgetEntity(category = "Housing", limitCentavos = 12_500_00L, year = m0.year, month = m0.month, isSampleData = false),
+      ), // ₱12,000 / ₱12,500 -> 96.0% NEAR LIMIT
+      DemoBudgetRecord(
+        docId = "demo_budget_03",
+        entity = BudgetEntity(category = "Groceries", limitCentavos = 6_000_00L, year = m0.year, month = m0.month, isSampleData = false),
+      ), // ₱5,420 / ₱6,000 -> 90.3% NEAR LIMIT
+      DemoBudgetRecord(
+        docId = "demo_budget_04",
+        entity = BudgetEntity(category = "Coffee & Snacks", limitCentavos = 1_500_00L, year = m0.year, month = m0.month, isSampleData = false),
+      ), // ₱1,340 / ₱1,500 -> 89.3% APPROACHING
+      DemoBudgetRecord(
+        docId = "demo_budget_05",
+        entity = BudgetEntity(category = "Bills and Utilities", limitCentavos = 5_500_00L, year = m0.year, month = m0.month, isSampleData = false),
+      ), // ₱4,850 / ₱5,500 -> 88.2% APPROACHING
+      DemoBudgetRecord(
+        docId = "demo_budget_06",
+        entity = BudgetEntity(category = "Transportation", limitCentavos = 3_800_00L, year = m0.year, month = m0.month, isSampleData = false),
+      ), // ₱3,240 / ₱3,800 -> 85.3% APPROACHING
+      DemoBudgetRecord(
+        docId = "demo_budget_07",
+        entity = BudgetEntity(category = "Shopping", limitCentavos = 5_000_00L, year = m0.year, month = m0.month, isSampleData = false),
+      ), // ₱3,490 / ₱5,000 -> 69.8% NORMAL
+      DemoBudgetRecord(
+        docId = "demo_budget_08",
+        entity = BudgetEntity(category = "Subscriptions", limitCentavos = 1_800_00L, year = m0.year, month = m0.month, isSampleData = false),
+      ), // ₱1,148 / ₱1,800 -> 63.8% NORMAL
+
+      // Previous Month (m1)
+      DemoBudgetRecord(
+        docId = "demo_budget_09",
+        entity = BudgetEntity(category = "Housing", limitCentavos = 12_500_00L, year = m1.year, month = m1.month, isSampleData = false),
+      ),
+      DemoBudgetRecord(
+        docId = "demo_budget_10",
+        entity = BudgetEntity(category = "Groceries", limitCentavos = 6_000_00L, year = m1.year, month = m1.month, isSampleData = false),
+      ),
+      DemoBudgetRecord(
+        docId = "demo_budget_11",
+        entity = BudgetEntity(category = "Food and Dining", limitCentavos = 4_200_00L, year = m1.year, month = m1.month, isSampleData = false),
+      ),
+      DemoBudgetRecord(
+        docId = "demo_budget_12",
+        entity = BudgetEntity(category = "Bills and Utilities", limitCentavos = 5_200_00L, year = m1.year, month = m1.month, isSampleData = false),
+      ),
+      DemoBudgetRecord(
+        docId = "demo_budget_13",
+        entity = BudgetEntity(category = "Internet & Load", limitCentavos = 2_500_00L, year = m1.year, month = m1.month, isSampleData = false),
+      ),
+      DemoBudgetRecord(
+        docId = "demo_budget_14",
+        entity = BudgetEntity(category = "Transportation", limitCentavos = 3_800_00L, year = m1.year, month = m1.month, isSampleData = false),
+      ),
+      DemoBudgetRecord(
+        docId = "demo_budget_15",
+        entity = BudgetEntity(category = "Education", limitCentavos = 3_000_00L, year = m1.year, month = m1.month, isSampleData = false),
+      ),
+    )
+
+    fun futureMonth(offsetMonths: Int): YearMonthKey {
+      var cursor = m0
+      repeat(offsetMonths) { cursor = cursor.next() }
+      return cursor
+    }
+
+    val goals = listOf(
+      DemoGoalRecord(
+        docId = "demo_goal_01",
+        entity = SavingsGoalEntity(
+          name = "Emergency Fund (6 Months)",
+          targetCentavos = 150_000_00L,
+          currentSavedCentavos = 112_500_00L,
+          targetDateEpochDay = dayIn(futureMonth(8), 15),
+          createdDateEpochDay = dayIn(m5, 2),
+          status = GoalStatus.ACTIVE,
+          isSampleData = false,
+        ),
+        contributions = listOf(
+          DemoContributionRecord(
+            docId = "demo_contrib_01",
+            amountCentavos = 45_000_00L,
+            isWithdrawal = false,
+            note = "Initial emergency safety reserve",
+            dateEpochDay = dayIn(m4, 16),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_02",
+            amountCentavos = 25_000_00L,
+            isWithdrawal = false,
+            note = "Quarterly bonus transfer",
+            dateEpochDay = dayIn(m2, 26),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_03",
+            amountCentavos = 22_500_00L,
+            isWithdrawal = false,
+            note = "Monthly high-yield reserve deposit",
+            dateEpochDay = dayIn(m1, 16),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_04",
+            amountCentavos = 20_000_00L,
+            isWithdrawal = false,
+            note = "Current month payroll auto-transfer",
+            dateEpochDay = currDay(16),
+          ),
+        ),
+      ),
+      DemoGoalRecord(
+        docId = "demo_goal_02",
+        entity = SavingsGoalEntity(
+          name = "Japan Autumn Trip",
+          targetCentavos = 80_000_00L,
+          currentSavedCentavos = 42_000_00L,
+          targetDateEpochDay = dayIn(futureMonth(10), 20),
+          createdDateEpochDay = dayIn(m4, 5),
+          status = GoalStatus.ACTIVE,
+          isSampleData = false,
+        ),
+        contributions = listOf(
+          DemoContributionRecord(
+            docId = "demo_contrib_05",
+            amountCentavos = 18_000_00L,
+            isWithdrawal = false,
+            note = "Initial Kyoto & Tokyo flight fund",
+            dateEpochDay = dayIn(m3, 18),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_06",
+            amountCentavos = 16_000_00L,
+            isWithdrawal = false,
+            note = "Freelance project allocation",
+            dateEpochDay = dayIn(m1, 23),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_07",
+            amountCentavos = 12_000_00L,
+            isWithdrawal = false,
+            note = "Hotel & JR Pass savings deposit",
+            dateEpochDay = currDay(9),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_08",
+            amountCentavos = 4_000_00L,
+            isWithdrawal = true,
+            note = "Seat sale baggage & travel insurance booking",
+            dateEpochDay = currDay(14),
+          ),
+        ),
+      ),
+      DemoGoalRecord(
+        docId = "demo_goal_03",
+        entity = SavingsGoalEntity(
+          name = "MacBook Pro Upgrade",
+          targetCentavos = 95_000_00L,
+          currentSavedCentavos = 95_000_00L,
+          targetDateEpochDay = dayIn(m0, 25),
+          createdDateEpochDay = dayIn(m5, 10),
+          status = GoalStatus.COMPLETED,
+          isSampleData = false,
+        ),
+        contributions = listOf(
+          DemoContributionRecord(
+            docId = "demo_contrib_09",
+            amountCentavos = 38_000_00L,
+            isWithdrawal = false,
+            note = "Previous laptop resale allocation",
+            dateEpochDay = dayIn(m4, 20),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_10",
+            amountCentavos = 32_000_00L,
+            isWithdrawal = false,
+            note = "Mid-year bonus & consulting savings",
+            dateEpochDay = dayIn(m2, 26),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_11",
+            amountCentavos = 25_000_00L,
+            isWithdrawal = false,
+            note = "Final milestone contribution — goal reached!",
+            dateEpochDay = currDay(8),
+          ),
+        ),
+      ),
+      DemoGoalRecord(
+        docId = "demo_goal_04",
+        entity = SavingsGoalEntity(
+          name = "Home Office Ergonomics",
+          targetCentavos = 25_000_00L,
+          currentSavedCentavos = 9_500_00L,
+          targetDateEpochDay = dayIn(futureMonth(4), 10),
+          createdDateEpochDay = dayIn(m2, 12),
+          status = GoalStatus.ACTIVE,
+          isSampleData = false,
+        ),
+        contributions = listOf(
+          DemoContributionRecord(
+            docId = "demo_contrib_12",
+            amountCentavos = 3_500_00L,
+            isWithdrawal = false,
+            note = "Standing desk starter savings",
+            dateEpochDay = dayIn(m2, 16),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_13",
+            amountCentavos = 3_000_00L,
+            isWithdrawal = false,
+            note = "Ergonomic chair allocation",
+            dateEpochDay = dayIn(m1, 17),
+          ),
+          DemoContributionRecord(
+            docId = "demo_contrib_14",
+            amountCentavos = 3_000_00L,
+            isWithdrawal = false,
+            note = "Monthly workspace contribution",
+            dateEpochDay = currDay(16),
+          ),
+        ),
+      ),
+    )
+
+    return DemonstrationDataset(
+      transactions = transactions,
+      budgets = budgets,
+      goals = goals,
+    )
+  }
 }
+
+data class DemoTransactionRecord(
+  val docId: String,
+  val entity: TransactionEntity,
+)
+
+data class DemoBudgetRecord(
+  val docId: String,
+  val entity: BudgetEntity,
+)
+
+data class DemoContributionRecord(
+  val docId: String,
+  val amountCentavos: Long,
+  val isWithdrawal: Boolean,
+  val note: String,
+  val dateEpochDay: Long,
+)
+
+data class DemoGoalRecord(
+  val docId: String,
+  val entity: SavingsGoalEntity,
+  val contributions: List<DemoContributionRecord>,
+)
+
+data class DemonstrationDataset(
+  val transactions: List<DemoTransactionRecord>,
+  val budgets: List<DemoBudgetRecord>,
+  val goals: List<DemoGoalRecord>,
+)
+

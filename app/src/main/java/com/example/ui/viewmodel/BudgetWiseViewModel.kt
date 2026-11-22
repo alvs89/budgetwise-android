@@ -173,6 +173,7 @@ data class BudgetWiseUiState(
   val customPhotoBase64: String = "",
   val googlePhotoUrl: String? = null,
   val isUpdatingPhoto: Boolean = false,
+  val isSeedingDemoData: Boolean = false,
   val shouldShowSpotlightTour: Boolean = false,
   val cloudErrorMessage: String? = null,
 )
@@ -197,6 +198,7 @@ private data class CloudMetaInputs(
   val profileState: CloudProfileState,
   val syncStatus: CloudSyncStatus,
   val isUpdatingPhoto: Boolean,
+  val isSeedingDemoData: Boolean,
   val cloudErrorMessage: String?,
 )
 
@@ -233,6 +235,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private val activityFilterFlow = MutableStateFlow(ActivityFilterState())
   private val homePeriodScopeFlow = MutableStateFlow(HomePeriodScope.THIS_MONTH)
   private val isUpdatingPhotoFlow = MutableStateFlow(false)
+  private val isSeedingDemoDataFlow = MutableStateFlow(false)
   private val cloudErrorMessageFlow = MutableStateFlow<String?>(null)
 
   private val _snackbarMessages = MutableSharedFlow<AppToastMessage>(extraBufferCapacity = 8)
@@ -297,6 +300,20 @@ class BudgetWiseViewModel @JvmOverloads constructor(
             if (profile.onboardingCompleted) {
               preferencesRepository.markSpotlightTourCompleted()
             }
+            if (
+              accountEmail?.trim().equals(DEMO_ACCOUNT_EMAIL, ignoreCase = true) &&
+              !initialPrefs.hasAutoSeededDemoAccount
+            ) {
+              isSeedingDemoDataFlow.value = true
+              val seedResult = cloudRepository.seedDemonstrationData(YearMonthKey.current())
+              isSeedingDemoDataFlow.value = false
+              seedResult.onSuccess { writtenCount ->
+                preferencesRepository.markDemoAccountAutoSeeded()
+                if (writtenCount > 0) {
+                  emitSuccess("Demonstration data loaded and synced")
+                }
+              }
+            }
           }.onFailure { err ->
             cloudErrorMessageFlow.value = err.localizedMessage ?: "Unable to initialize cloud account."
           }
@@ -339,9 +356,10 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     profileSourceFlow,
     syncStatusSourceFlow,
     isUpdatingPhotoFlow,
+    isSeedingDemoDataFlow,
     cloudErrorMessageFlow,
-  ) { profileState, syncStatus, isUpdatingPhoto, cloudError ->
-    CloudMetaInputs(profileState, syncStatus, isUpdatingPhoto, cloudError)
+  ) { profileState, syncStatus, isUpdatingPhoto, isSeedingDemoData, cloudError ->
+    CloudMetaInputs(profileState, syncStatus, isUpdatingPhoto, isSeedingDemoData, cloudError)
   }
 
   val uiState: StateFlow<BudgetWiseUiState> = combine(
@@ -450,6 +468,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       customPhotoBase64 = resolvedCustomPhotoBase64,
       googlePhotoUrl = accountPhotoUrl?.takeIf { it.isNotBlank() },
       isUpdatingPhoto = cloudMeta.isUpdatingPhoto,
+      isSeedingDemoData = cloudMeta.isSeedingDemoData,
       shouldShowSpotlightTour = shouldShowTour,
       cloudErrorMessage = resolvedCloudError,
     )
@@ -1205,6 +1224,35 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   fun setBalanceHidden(hidden: Boolean) {
     viewModelScope.launch {
       preferencesRepository.updateBalanceHidden(hidden)
+    }
+  }
+
+  fun loadDemonstrationData() {
+    if (isSeedingDemoDataFlow.value) return
+    viewModelScope.launch {
+      isSeedingDemoDataFlow.value = true
+      try {
+        val writtenCount = if (cloudRepository != null) {
+          val result = cloudRepository.seedDemonstrationData(YearMonthKey.current())
+          if (result.isFailure) {
+            emitError("Unable to load demonstration data. Please try again.")
+            return@launch
+          }
+          result.getOrDefault(0)
+        } else {
+          repository.seedDemonstrationData(YearMonthKey.current())
+        }
+        preferencesRepository.markDemoAccountAutoSeeded()
+        selectedMonthFlow.value = YearMonthKey.current()
+        evaluateActiveAlertsOnStartup(uiState.value.preferences)
+        if (writtenCount > 0) {
+          emitSuccess("Demonstration data loaded and synced")
+        } else {
+          emitInfo("Demonstration data is already loaded")
+        }
+      } finally {
+        isSeedingDemoDataFlow.value = false
+      }
     }
   }
 
@@ -2014,6 +2062,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
 
   companion object {
     private const val TAG = "BudgetWiseViewModel"
+    private const val DEMO_ACCOUNT_EMAIL = "alvinj.guillermo09@gmail.com"
     private const val CHAT_RESPONSE_TIMEOUT_MILLIS = 60_000L
 
     fun provideFactory(

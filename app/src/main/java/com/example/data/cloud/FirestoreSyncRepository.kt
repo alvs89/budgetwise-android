@@ -9,6 +9,7 @@ import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.domain.CurrencyOption
 import com.example.domain.GoalStatus
+import com.example.domain.YearMonthKey
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -968,6 +969,116 @@ class FirestoreSyncRepository(
         ensureDefaultCategoriesExistInternal()
       }
     }
+
+  // ---------------------------------------------------------------------------
+  // Demonstration Dataset Seeding (Idempotent Cloud Batch Sync)
+  // ---------------------------------------------------------------------------
+  /**
+   * Populates the signed-in user's Firestore collections with a practical, realistic 6-month
+   * demonstration dataset (transactions, multi-month budgets, savings goals, and contributions).
+   *
+   * Uses deterministic rules-compliant document IDs and skips any document ID or budget slot that
+   * already exists so re-running never triggers disallowed updates or duplicates existing records.
+   * Returns the number of newly written Firestore documents.
+   */
+  suspend fun seedDemonstrationData(
+    referenceMonth: YearMonthKey = YearMonthKey.current(),
+  ): Result<Int> = runCloudCatching(OperationType.WRITE, "users/$userId") {
+    initMutex.withLock {
+      ensureDefaultCategoriesExistInternal()
+
+      val dataset = SampleDataSeeder.demonstrationDataset(referenceMonth)
+      val existingTxIds = transactionsCol.get().await().documents.map { it.id }.toSet()
+      val existingBudgetSnaps = budgetsCol.get().await().documents
+      val existingBudgetIds = existingBudgetSnaps.map { it.id }.toSet()
+      val existingBudgetSlots = existingBudgetSnaps.mapNotNull { snap ->
+        val cat = snap.getString("category")?.trim()?.lowercase(Locale.US) ?: return@mapNotNull null
+        val y = snap.getLong("year")?.toInt() ?: return@mapNotNull null
+        val m = snap.getLong("month")?.toInt() ?: return@mapNotNull null
+        Triple(cat, y, m)
+      }.toSet()
+      val existingGoalIds = goalsCol.get().await().documents.map { it.id }.toSet()
+      val existingContribIds = contributionsCol.get().await().documents.map { it.id }.toSet()
+
+      val entries = mutableListOf<Pair<DocumentReference, Map<String, Any>>>()
+
+      dataset.transactions.forEach { record ->
+        if (record.docId !in existingTxIds) {
+          val tx = record.entity
+          entries += transactionsCol.document(record.docId) to mapOf(
+            "userId" to userId,
+            "title" to tx.title.trim().take(120),
+            "amountCentavos" to tx.amountCentavos,
+            "type" to tx.type.name,
+            "category" to tx.category.trim().take(80),
+            "dateEpochDay" to tx.dateEpochDay,
+            "paymentMethod" to tx.paymentMethod.name,
+            "notes" to tx.notes.trim().take(500),
+            "sampleData" to tx.isSampleData,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          )
+        }
+      }
+
+      dataset.budgets.forEach { record ->
+        val budget = record.entity
+        val slot = Triple(budget.category.trim().lowercase(Locale.US), budget.year, budget.month)
+        if (record.docId !in existingBudgetIds && slot !in existingBudgetSlots) {
+          entries += budgetsCol.document(record.docId) to mapOf(
+            "userId" to userId,
+            "category" to budget.category.trim().take(80),
+            "limitCentavos" to budget.limitCentavos,
+            "year" to budget.year,
+            "month" to budget.month,
+            "sampleData" to budget.isSampleData,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          )
+        }
+      }
+
+      dataset.goals.forEach { goalRecord ->
+        val goal = goalRecord.entity
+        val goalExistsOrWillExist = goalRecord.docId in existingGoalIds || true
+        if (goalRecord.docId !in existingGoalIds) {
+          entries += goalsCol.document(goalRecord.docId) to mapOf(
+            "userId" to userId,
+            "name" to goal.name.trim().take(100),
+            "targetCentavos" to goal.targetCentavos,
+            "currentSavedCentavos" to goal.currentSavedCentavos.coerceAtLeast(0L),
+            "targetDateEpochDay" to goal.targetDateEpochDay,
+            "createdDateEpochDay" to goal.createdDateEpochDay,
+            "status" to goal.status.name,
+            "sampleData" to goal.isSampleData,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          )
+        }
+        if (goalExistsOrWillExist) {
+          goalRecord.contributions.forEach { contrib ->
+            if (contrib.docId !in existingContribIds) {
+              entries += contributionsCol.document(contrib.docId) to mapOf(
+                "userId" to userId,
+                "goalDocId" to goalRecord.docId,
+                "amountCentavos" to contrib.amountCentavos,
+                "withdrawal" to contrib.isWithdrawal,
+                "note" to contrib.note.trim().take(300),
+                "dateEpochDay" to contrib.dateEpochDay,
+                "createdAt" to FieldValue.serverTimestamp(),
+              )
+            }
+          }
+        }
+      }
+
+      if (entries.isNotEmpty()) {
+        commitBatchSets(entries)
+        _hasServerConfirmed.value = true
+      }
+      entries.size
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Internal Batch Helpers

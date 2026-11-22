@@ -21,11 +21,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoGraph
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.DonutLarge
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.ShowChart
@@ -140,7 +140,7 @@ fun InsightsScreen(
                 .testTag("insights_assistant_button"),
             ) {
               Icon(
-                imageVector = Icons.Rounded.Forum,
+                imageVector = Icons.Rounded.AutoAwesome,
                 contentDescription = "Ask financial assistant",
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(19.dp),

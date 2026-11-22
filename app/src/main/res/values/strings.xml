@@ -139,4 +139,11 @@
     <string name="spotlight_step6_body">Review visual charts, category breakdowns, spending trends, and personalized financial summaries.</string>
     <string name="spotlight_step7_title">Alerts, Privacy &amp; Settings</string>
     <string name="spotlight_step7_body">Check notifications, hide balances in public with the Eye icon, or open Settings to customize your preferences.</string>
+
+    <!-- Demonstration Data Loader -->
+    <string name="settings_load_demo_action">Load Demonstration Data</string>
+    <string name="settings_load_demo_loading">Loading Demonstration Data…</string>
+    <string name="settings_load_demo_confirm_title">Load Demonstration Data?</string>
+    <string name="settings_load_demo_confirm_message">Populate your account with 6 months of realistic income, expenses, monthly category budgets, and savings goals with contribution history. All records sync privately to your account without removing existing entries.</string>
+    <string name="settings_load_demo_confirm_cta">Load Data</string>
 </resources>

@@ -28,6 +28,7 @@ data class UserPreferences(
   val onboardingCompleted: Boolean = false,
   val hasCompletedTour: Boolean = false,
   val hasSeededInitialData: Boolean = false,
+  val hasAutoSeededDemoAccount: Boolean = false,
   val isBalanceHidden: Boolean = false,
   val appLockEnabled: Boolean = false,
   val biometricUnlockEnabled: Boolean = false,
@@ -61,6 +62,7 @@ class UserPreferencesRepository(
   private val onboardingCompletedKey = booleanPreferencesKey("onboarding_completed$uidSuffix")
   private val hasCompletedTourKey = booleanPreferencesKey("spotlight_tour_completed$uidSuffix")
   private val hasSeededInitialDataKey = booleanPreferencesKey("has_seeded_initial_data")
+  private val hasAutoSeededDemoAccountKey = booleanPreferencesKey("demo_account_auto_seeded$uidSuffix")
   private val isBalanceHiddenKey = booleanPreferencesKey("is_balance_hidden$uidSuffix")
   private val appLockEnabledKey = booleanPreferencesKey("app_lock_enabled$uidSuffix")
   private val biometricUnlockEnabledKey = booleanPreferencesKey("biometric_unlock_enabled$uidSuffix")
@@ -98,6 +100,7 @@ class UserPreferencesRepository(
       onboardingCompleted = prefs[onboardingCompletedKey] ?: false,
       hasCompletedTour = prefs[hasCompletedTourKey] ?: false,
       hasSeededInitialData = prefs[hasSeededInitialDataKey] ?: false,
+      hasAutoSeededDemoAccount = prefs[hasAutoSeededDemoAccountKey] ?: false,
       isBalanceHidden = prefs[isBalanceHiddenKey] ?: false,
       appLockEnabled = effectiveAppLockEnabled,
       biometricUnlockEnabled = effectiveAppLockEnabled && (prefs[biometricUnlockEnabledKey] ?: false),
@@ -163,6 +166,12 @@ class UserPreferencesRepository(
   suspend fun markInitialDataSeeded() {
     context.dataStore.edit { prefs ->
       prefs[hasSeededInitialDataKey] = true
+    }
+  }
+
+  suspend fun markDemoAccountAutoSeeded() {
+    context.dataStore.edit { prefs ->
+      prefs[hasAutoSeededDemoAccountKey] = true
     }
   }
 

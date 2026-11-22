@@ -38,10 +38,10 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DeleteForever
@@ -138,6 +138,7 @@ fun SettingsScreen(
   onOpenNotificationsSettings: () -> Unit,
   onOpenHelpCenter: () -> Unit,
   onExportData: () -> Unit,
+  onLoadDemoData: () -> Unit = {},
   onClearAllData: () -> Unit,
   onSignOut: () -> Unit = {},
   onPickProfilePhotoUri: (Uri) -> Unit = {},
@@ -163,6 +164,7 @@ fun SettingsScreen(
     mutableStateOf(uiState.preferences.displayName)
   }
   var showClearConfirm by remember { mutableStateOf(false) }
+  var showLoadDemoConfirm by remember { mutableStateOf(false) }
   var showSignOutConfirm by remember { mutableStateOf(false) }
   var showPhotoActionsDialog by remember { mutableStateOf(false) }
   var pendingCropBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -191,6 +193,7 @@ fun SettingsScreen(
   LaunchedEffect(isAppLocked) {
     if (isAppLocked) {
       showClearConfirm = false
+      showLoadDemoConfirm = false
       showSignOutConfirm = false
       showPhotoActionsDialog = false
       pendingCropBitmap = null
@@ -235,6 +238,20 @@ fun SettingsScreen(
         onRemoveProfilePhoto()
       },
       onDismiss = { showPhotoActionsDialog = false },
+    )
+  }
+
+  if (showLoadDemoConfirm && !isAppLocked) {
+    ConfirmationDialog(
+      title = stringResource(R.string.settings_load_demo_confirm_title),
+      message = stringResource(R.string.settings_load_demo_confirm_message),
+      confirmLabel = stringResource(R.string.settings_load_demo_confirm_cta),
+      isDestructive = false,
+      onConfirm = {
+        onLoadDemoData()
+        showLoadDemoConfirm = false
+      },
+      onDismiss = { showLoadDemoConfirm = false },
     )
   }
 
@@ -692,6 +709,42 @@ fun SettingsScreen(
                 )
               }
               OutlinedButton(
+                onClick = { showLoadDemoConfirm = true },
+                enabled = !uiState.isSeedingDemoData,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .heightIn(min = 48.dp)
+                  .testTag("settings_load_demo_data_button"),
+              ) {
+                if (uiState.isSeedingDemoData) {
+                  CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(18.dp),
+                  )
+                } else {
+                  Icon(
+                    imageVector = Icons.Rounded.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                  )
+                }
+                Text(
+                  text = stringResource(
+                    if (uiState.isSeedingDemoData) {
+                      R.string.settings_load_demo_loading
+                    } else {
+                      R.string.settings_load_demo_action
+                    }
+                  ),
+                  color = MaterialTheme.colorScheme.primary,
+                  style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                  modifier = Modifier.padding(start = 8.dp),
+                )
+              }
+              OutlinedButton(
                 onClick = { showClearConfirm = true },
                 shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
@@ -914,39 +967,7 @@ private fun CloudAccountBanner(
   }
   val avatarModel: Any? = customPhotoBytes ?: profilePhotoUrl.takeIf { it.isNotBlank() }
 
-  val (syncIcon, syncLabel, syncTint) = when (syncStatus) {
-    CloudSyncStatus.SYNCED -> Triple(
-      Icons.Rounded.CloudDone,
-      stringResource(R.string.settings_sync_status_synced),
-      MaterialTheme.colorScheme.primary,
-    )
-    CloudSyncStatus.SYNCING -> Triple(
-      Icons.Rounded.CloudSync,
-      stringResource(R.string.settings_sync_status_syncing),
-      MaterialTheme.colorScheme.primary,
-    )
-    CloudSyncStatus.OFFLINE -> Triple(
-      Icons.Rounded.CloudOff,
-      stringResource(R.string.settings_sync_status_offline),
-      MaterialTheme.colorScheme.tertiary,
-    )
-    CloudSyncStatus.ERROR -> Triple(
-      Icons.Rounded.ErrorOutline,
-      stringResource(R.string.settings_sync_status_error),
-      MaterialTheme.colorScheme.error,
-    )
-  }
-
-  val spinTransition = rememberInfiniteTransition(label = "sync_refresh_spin")
-  val refreshRotation by spinTransition.animateFloat(
-    initialValue = 0f,
-    targetValue = 360f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(durationMillis = 900, easing = LinearEasing),
-      repeatMode = RepeatMode.Restart,
-    ),
-    label = "sync_refresh_angle",
-  )
+  val showStatusPill = isUpdatingPhoto || syncStatus != CloudSyncStatus.SYNCED
 
   Column(
     modifier = Modifier
@@ -954,7 +975,7 @@ private fun CloudAccountBanner(
       .testTag("settings_cloud_account_section"),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    // Tight Identity Row: 60.dp avatar + tightly grouped email & 28.dp interactive sync pill
+    // Calm Identity Row: 60.dp avatar + Display Name & Email (sync pill appears only on exceptions)
     Row(
       modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
@@ -1031,57 +1052,104 @@ private fun CloudAccountBanner(
 
       Column(
         modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
       ) {
+        if (displayName.isNotBlank()) {
+          Text(
+            text = displayName.trim(),
+            style = MaterialTheme.typography.titleMedium.copy(
+              fontWeight = FontWeight.SemiBold,
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag("settings_account_display_name"),
+          )
+        }
         Text(
           text = email,
-          style = MaterialTheme.typography.titleSmall.copy(
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
+          style = MaterialTheme.typography.bodySmall.copy(
+            fontSize = 13.sp,
           ),
-          color = MaterialTheme.colorScheme.onSurface,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.testTag("settings_account_email"),
         )
-        Row(
-          modifier = Modifier
-            .height(28.dp)
-            .clip(RoundedCornerShape(999.dp))
-            .background(syncTint.copy(alpha = 0.14f))
-            .border(0.75.dp, syncTint.copy(alpha = 0.42f), RoundedCornerShape(999.dp))
-            .clickable(onClick = onVerifySyncClick)
-            .padding(horizontal = 10.dp)
-            .testTag("settings_sync_status_badge"),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-          Icon(
-            imageVector = syncIcon,
-            contentDescription = null,
-            tint = syncTint,
-            modifier = Modifier.size(14.dp),
+        if (showStatusPill) {
+          val (statusIcon, statusLabel, statusTint) = when {
+            isUpdatingPhoto -> Triple(
+              Icons.Rounded.CloudSync,
+              stringResource(R.string.settings_photo_updating),
+              MaterialTheme.colorScheme.primary,
+            )
+            syncStatus == CloudSyncStatus.SYNCING -> Triple(
+              Icons.Rounded.CloudSync,
+              stringResource(R.string.settings_sync_status_syncing),
+              MaterialTheme.colorScheme.primary,
+            )
+            syncStatus == CloudSyncStatus.OFFLINE -> Triple(
+              Icons.Rounded.CloudOff,
+              stringResource(R.string.settings_sync_status_offline),
+              MaterialTheme.colorScheme.tertiary,
+            )
+            else -> Triple(
+              Icons.Rounded.ErrorOutline,
+              stringResource(R.string.settings_sync_status_error),
+              MaterialTheme.colorScheme.error,
+            )
+          }
+
+          val isSpinning = syncStatus == CloudSyncStatus.SYNCING || isUpdatingPhoto
+          val spinTransition = rememberInfiniteTransition(label = "sync_refresh_spin")
+          val refreshRotation by spinTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+              animation = tween(durationMillis = 900, easing = LinearEasing),
+              repeatMode = RepeatMode.Restart,
+            ),
+            label = "sync_refresh_angle",
           )
-          Text(
-            text = if (isUpdatingPhoto) {
-              stringResource(R.string.settings_photo_updating)
-            } else {
-              syncLabel
-            },
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-            color = syncTint,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-          )
-          Icon(
-            imageVector = Icons.Rounded.Refresh,
-            contentDescription = stringResource(R.string.settings_sync_tap_hint),
-            tint = syncTint.copy(alpha = 0.85f),
+
+          Spacer(modifier = Modifier.height(2.dp))
+          Row(
             modifier = Modifier
-              .size(13.dp)
-              .rotate(if (syncStatus == CloudSyncStatus.SYNCING) refreshRotation else 0f),
-          )
+              .height(26.dp)
+              .clip(RoundedCornerShape(999.dp))
+              .background(statusTint.copy(alpha = 0.14f))
+              .border(0.75.dp, statusTint.copy(alpha = 0.42f), RoundedCornerShape(999.dp))
+              .clickable(enabled = !isUpdatingPhoto, onClick = onVerifySyncClick)
+              .padding(horizontal = 10.dp)
+              .testTag("settings_sync_status_badge"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Icon(
+              imageVector = statusIcon,
+              contentDescription = null,
+              tint = statusTint,
+              modifier = Modifier.size(13.dp),
+            )
+            Text(
+              text = statusLabel,
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+              color = statusTint,
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
+            )
+            if (!isUpdatingPhoto) {
+              Icon(
+                imageVector = Icons.Rounded.Refresh,
+                contentDescription = stringResource(R.string.settings_sync_tap_hint),
+                tint = statusTint.copy(alpha = 0.85f),
+                modifier = Modifier
+                  .size(12.dp)
+                  .rotate(if (isSpinning) refreshRotation else 0f),
+              )
+            }
+          }
         }
       }
     }

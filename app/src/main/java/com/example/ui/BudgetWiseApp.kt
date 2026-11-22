@@ -844,6 +844,7 @@ fun BudgetWiseApp(
                 onOpenNotificationsSettings = { navController.navigate(NotificationsSettingsRoute) },
                 onOpenHelpCenter = { navController.navigate(HelpCenterRoute) },
                 onExportData = { showExportDialog = true },
+                onLoadDemoData = viewModel::loadDemonstrationData,
                 onClearAllData = viewModel::clearAllRecords,
                 onSignOut = onSignOut,
                 onPickProfilePhotoUri = viewModel::updateProfilePhotoFromUri,

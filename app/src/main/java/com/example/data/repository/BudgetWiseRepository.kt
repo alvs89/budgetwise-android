@@ -12,6 +12,7 @@ import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.domain.ChatRole
+import com.example.domain.YearMonthKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -72,6 +73,41 @@ class BudgetWiseRepository(
       financialAlertDao.deleteAll()
       preferencesRepository.markInitialDataSeeded()
     }
+  }
+
+  suspend fun seedDemonstrationData(
+    referenceMonth: YearMonthKey = YearMonthKey.current(),
+  ): Int = seedMutex.withLock {
+    categoryDao.insertAll(SampleDataSeeder.defaultCategories())
+    val dataset = SampleDataSeeder.demonstrationDataset(referenceMonth)
+    var inserted = 0
+    dataset.transactions.forEach { record ->
+      transactionDao.insert(record.entity)
+      inserted += 1
+    }
+    dataset.budgets.forEach { record ->
+      budgetDao.upsertBudgetForMonth(record.entity)
+      inserted += 1
+    }
+    dataset.goals.forEach { goalRecord ->
+      val goalId = savingsGoalDao.insertGoal(goalRecord.entity)
+      inserted += 1
+      val contributions = goalRecord.contributions.map { c ->
+        SavingsContributionEntity(
+          goalId = goalId,
+          amountCentavos = c.amountCentavos,
+          isWithdrawal = c.isWithdrawal,
+          note = c.note,
+          dateEpochDay = c.dateEpochDay,
+        )
+      }
+      if (contributions.isNotEmpty()) {
+        savingsGoalDao.insertAllContributions(contributions)
+        inserted += contributions.size
+      }
+    }
+    preferencesRepository.markInitialDataSeeded()
+    inserted
   }
 
   // Transactions
