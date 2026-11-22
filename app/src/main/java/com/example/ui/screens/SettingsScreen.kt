@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -309,8 +308,7 @@ fun SettingsScreen(
   Column(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
-      .navigationBarsPadding(),
+      .background(MaterialTheme.colorScheme.background),
   ) {
     Row(
       modifier = Modifier
@@ -354,7 +352,7 @@ fun SettingsScreen(
         modifier = Modifier
           .widthIn(max = 760.dp)
           .fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 32.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
       ) {
         // Card 1: Account & Preferences (Google Cloud Account + Display Name + Preferred Currency)
@@ -753,7 +751,7 @@ fun SettingsScreen(
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 10.dp),
+              .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 0.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
