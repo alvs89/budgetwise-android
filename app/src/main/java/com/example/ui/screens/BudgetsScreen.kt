@@ -161,52 +161,69 @@ fun BudgetsScreen(
     ) {
       item {
         Column(
-          modifier = Modifier.fillMaxWidth(),
-          verticalArrangement = Arrangement.spacedBy(4.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .then(
+              if (!hasBudgets) {
+                Modifier.onGloballyPositioned { coords ->
+                  if (coords.isAttached) {
+                    runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                      onRegisterSpotlightBounds(SpotlightTargetId.BUDGETS_OVERVIEW, rect)
+                    }
+                  }
+                }
+              } else {
+                Modifier
+              }
+            ),
+          verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-          Row(
+          Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
           ) {
-            AutoResizeSingleLineText(
-              text = "Budgets",
-              style = MaterialTheme.typography.displaySmall,
-              color = MaterialTheme.colorScheme.onBackground,
-              minFontSize = 20.sp,
-              modifier = Modifier
-                .weight(1f)
-                .padding(end = 8.dp),
-            )
-            if (hasBudgets) {
-              FilledTonalButton(
-                onClick = {
-                  editingBudget = null
-                  showEditor = true
-                },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                modifier = Modifier.testTag("add_budget_button"),
-              ) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-                Text("New Budget", maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 4.dp))
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              AutoResizeSingleLineText(
+                text = "Budgets",
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                minFontSize = 20.sp,
+                modifier = Modifier
+                  .weight(1f)
+                  .padding(end = 8.dp),
+              )
+              if (hasBudgets) {
+                FilledTonalButton(
+                  onClick = {
+                    editingBudget = null
+                    showEditor = true
+                  },
+                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                  modifier = Modifier.testTag("add_budget_button"),
+                ) {
+                  Icon(Icons.Rounded.Add, contentDescription = null)
+                  Text("New Budget", maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 4.dp))
+                }
               }
             }
+            Text(
+              text = "Monthly category spending limits",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           }
-          Text(
-            text = "Monthly category spending limits",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+          MonthSelectorBar(
+            selectedMonth = uiState.selectedMonth,
+            onPreviousMonth = onPreviousMonth,
+            onNextMonth = onNextMonth,
+            modifier = Modifier.fillMaxWidth(),
           )
         }
-      }
-
-      item {
-        MonthSelectorBar(
-          selectedMonth = uiState.selectedMonth,
-          onPreviousMonth = onPreviousMonth,
-          onNextMonth = onNextMonth,
-          modifier = Modifier.fillMaxWidth(),
-        )
       }
 
       // Overall Monthly Budget Summary Hero Card (shown only when at least 1 budget exists)
@@ -357,13 +374,6 @@ fun BudgetsScreen(
             },
             secondaryActionIcon = if (previousMonthBudgetCount > 0) Icons.Rounded.ContentCopy else null,
             onSecondaryAction = if (previousMonthBudgetCount > 0) onCopyPreviousMonthBudgets else null,
-            modifier = Modifier.onGloballyPositioned { coords ->
-              if (coords.isAttached) {
-                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                  onRegisterSpotlightBounds(SpotlightTargetId.BUDGETS_OVERVIEW, rect)
-                }
-              }
-            },
           )
         }
       } else {

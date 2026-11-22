@@ -311,39 +311,40 @@ fun SpotlightTourOverlay(
         }
       }
 
-      // Collision-free root-coordinate tooltip placement using measured tooltip height
-      val screenMidY = containerHeightPx / 2f
-      val gapPx = with(density) { 16.dp.toPx() }
-      val safeMarginPx = with(density) { 16.dp.toPx() }
+      // Smart max-space collision-free tooltip placement (never intersects paddedRect)
+      val gapPx = with(density) { 14.dp.toPx() }
+      val clearancePx = with(density) { 24.dp.toPx() }
+      val safeMarginPx = with(density) { 12.dp.toPx() }
       val safeTopPx = (statusBarTopPx + safeMarginPx).coerceAtLeast(safeMarginPx)
       val safeBottomPx = (containerHeightPx - navBarBottomPx - safeMarginPx).coerceAtLeast(safeTopPx)
       val effectiveTooltipHeightPx = if (measuredTooltipHeightPx > 0) {
         measuredTooltipHeightPx.toFloat()
       } else {
-        with(density) { 184.dp.toPx() }
+        with(density) { 164.dp.toPx() }
       }
-      val maxBottomAnchoredTopPx = (safeBottomPx - effectiveTooltipHeightPx).coerceAtLeast(safeTopPx)
+      val maxSafeTopPx = (safeBottomPx - effectiveTooltipHeightPx).coerceAtLeast(safeTopPx)
 
-      val targetCenterY = paddedRect?.center?.y ?: screenMidY
-      val spaceAbove = if (paddedRect != null) paddedRect.top - gapPx - safeTopPx else 0f
-      val spaceBelow = if (paddedRect != null) safeBottomPx - (paddedRect.bottom + gapPx) else 0f
-      val placeCardAbove = hasValidTarget && when {
-        // Lower-half targets (e.g., Step 2 + FAB) always anchor strictly above
-        targetCenterY >= screenMidY -> true
-        // Upper-half targets anchor strictly below whenever space permits; fallback above only if cramped
-        spaceBelow >= effectiveTooltipHeightPx -> false
-        spaceAbove > spaceBelow -> true
-        else -> false
-      }
+      val spaceAbove = if (paddedRect != null) (paddedRect.top - safeTopPx).coerceAtLeast(0f) else 0f
+      val spaceBelow = if (paddedRect != null) (safeBottomPx - paddedRect.bottom).coerceAtLeast(0f) else 0f
+      val placeCardBelow = hasValidTarget && (
+        spaceBelow >= effectiveTooltipHeightPx + clearancePx ||
+          spaceBelow >= spaceAbove
+      )
 
       val rawDesiredTopPx = when {
         !hasContainerBounds -> safeTopPx
         !hasValidTarget -> ((safeTopPx + safeBottomPx - effectiveTooltipHeightPx) * 0.5f)
-          .coerceIn(safeTopPx, maxBottomAnchoredTopPx)
-        placeCardAbove -> (paddedRect!!.top - gapPx - effectiveTooltipHeightPx)
-          .coerceIn(safeTopPx, maxBottomAnchoredTopPx)
-        else -> (paddedRect!!.bottom + gapPx)
-          .coerceIn(safeTopPx, maxBottomAnchoredTopPx)
+          .coerceIn(safeTopPx, maxSafeTopPx)
+        placeCardBelow -> {
+          // Anchor strictly below targetRect + 14.dp; never pull upward into paddedRect
+          val strictlyBelowTop = paddedRect!!.bottom + gapPx
+          strictlyBelowTop.coerceAtMost(maxOf(strictlyBelowTop, maxSafeTopPx))
+        }
+        else -> {
+          // Anchor strictly above targetRect - 14.dp - tooltipHeight; never push downward into paddedRect
+          val strictlyAboveTop = paddedRect!!.top - gapPx - effectiveTooltipHeightPx
+          strictlyAboveTop.coerceAtLeast(minOf(strictlyAboveTop, safeTopPx))
+        }
       }
 
       val animatedTopPx by animateFloatAsState(
@@ -365,7 +366,7 @@ fun SpotlightTourOverlay(
         contentAlignment = Alignment.TopCenter,
       ) {
         Surface(
-          shape = RoundedCornerShape(20.dp),
+          shape = RoundedCornerShape(18.dp),
           color = MaterialTheme.colorScheme.surface,
           border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
           shadowElevation = 12.dp,
@@ -382,8 +383,8 @@ fun SpotlightTourOverlay(
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+              .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             // Top row: step badge ("1 of 7") on left, Skip on right (hidden on final step)
             Row(
@@ -404,7 +405,7 @@ fun SpotlightTourOverlay(
                   ),
                   color = MaterialTheme.colorScheme.onPrimaryContainer,
                   modifier = Modifier
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .padding(horizontal = 10.dp, vertical = 3.dp)
                     .testTag("spotlight_step_counter"),
                 )
               }
@@ -412,14 +413,14 @@ fun SpotlightTourOverlay(
               if (!isLastStep) {
                 TextButton(
                   onClick = onSkip,
-                  contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                  contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                   modifier = Modifier
-                    .heightIn(min = 36.dp)
+                    .height(30.dp)
                     .testTag("spotlight_skip_button"),
                 ) {
                   Text(
                     text = stringResource(R.string.welcome_skip),
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
                 }
@@ -429,12 +430,12 @@ fun SpotlightTourOverlay(
             // Icon + Title + concise body copy
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
               verticalAlignment = Alignment.Top,
             ) {
               Box(
                 modifier = Modifier
-                  .size(38.dp)
+                  .size(34.dp)
                   .clip(CircleShape)
                   .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center,
@@ -443,16 +444,17 @@ fun SpotlightTourOverlay(
                   imageVector = step.icon,
                   contentDescription = null,
                   tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(19.dp),
+                  modifier = Modifier.size(18.dp),
                 )
               }
               Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
               ) {
                 Text(
                   text = stringResource(step.titleRes),
-                  style = MaterialTheme.typography.titleMedium.copy(
+                  style = MaterialTheme.typography.titleSmall.copy(
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.2).sp,
                   ),
@@ -462,8 +464,8 @@ fun SpotlightTourOverlay(
                 Text(
                   text = stringResource(step.bodyRes),
                   style = MaterialTheme.typography.bodySmall.copy(
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
+                    fontSize = 12.5.sp,
+                    lineHeight = 17.sp,
                   ),
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                   modifier = Modifier.testTag("spotlight_step_body"),
@@ -473,7 +475,9 @@ fun SpotlightTourOverlay(
 
             // Bottom row: compact 7-dot progress indicator + Back / Next (or Done) controls
             Row(
-              modifier = Modifier.fillMaxWidth(),
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -508,20 +512,20 @@ fun SpotlightTourOverlay(
                     onClick = onBack,
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier
-                      .heightIn(min = 40.dp)
+                      .heightIn(min = 36.dp)
                       .testTag("spotlight_back_button"),
                   ) {
                     Icon(
                       imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                       contentDescription = null,
-                      modifier = Modifier.size(16.dp),
+                      modifier = Modifier.size(15.dp),
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                       text = stringResource(R.string.welcome_back),
-                      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                      style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                       maxLines = 1,
                       softWrap = false,
                     )
@@ -535,16 +539,16 @@ fun SpotlightTourOverlay(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                   ),
-                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                   modifier = Modifier
-                    .heightIn(min = 40.dp)
+                    .heightIn(min = 36.dp)
                     .testTag(if (isLastStep) "spotlight_done_button" else "spotlight_next_button"),
                 ) {
                   Text(
                     text = stringResource(
                       if (isLastStep) R.string.welcome_done else R.string.welcome_next
                     ),
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     maxLines = 1,
                     softWrap = false,
                   )
@@ -556,7 +560,7 @@ fun SpotlightTourOverlay(
                       Icons.AutoMirrored.Rounded.ArrowForward
                     },
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(15.dp),
                   )
                 }
               }

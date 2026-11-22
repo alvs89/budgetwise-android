@@ -137,8 +137,8 @@
     <string name="spotlight_step5_body">Set independent savings targets, record contributions, and watch your progress grow over time.</string>
     <string name="spotlight_step6_title">Explore Financial Insights</string>
     <string name="spotlight_step6_body">Review visual charts, category breakdowns, spending trends, and personalized financial summaries.</string>
-    <string name="spotlight_step7_title">Alerts, Privacy &amp; Settings</string>
-    <string name="spotlight_step7_body">Check notifications, hide balances in public with the Eye icon, or open Settings to customize your preferences.</string>
+    <string name="spotlight_step7_title">AI Assistant, Alerts &amp; Controls</string>
+    <string name="spotlight_step7_body">Ask the AI Assistant, check alerts, hide balances in public with the Eye icon, or open Settings anytime.</string>
 
     <!-- Demonstration Data Loader -->
     <string name="settings_load_demo_action">Load Demonstration Data</string>

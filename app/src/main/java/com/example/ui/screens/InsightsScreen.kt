@@ -197,15 +197,7 @@ fun InsightsScreen(
         }
 
         Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { coords ->
-              if (coords.isAttached) {
-                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                  onRegisterSpotlightBounds(SpotlightTargetId.INSIGHTS_OVERVIEW, rect)
-                }
-              }
-            },
+          modifier = Modifier.fillMaxWidth(),
           verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
           MonthSelectorBar(
@@ -218,7 +210,14 @@ fun InsightsScreen(
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Max),
+            .height(IntrinsicSize.Max)
+            .onGloballyPositioned { coords ->
+              if (coords.isAttached) {
+                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                  onRegisterSpotlightBounds(SpotlightTargetId.INSIGHTS_OVERVIEW, rect)
+                }
+              }
+            },
           horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
           FintechCard(

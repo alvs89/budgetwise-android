@@ -220,7 +220,21 @@ fun GoalsScreen(
     ) {
       item {
         Column(
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier
+            .fillMaxWidth()
+            .then(
+              if (!hasGoals) {
+                Modifier.onGloballyPositioned { coords ->
+                  if (coords.isAttached) {
+                    runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                      onRegisterSpotlightBounds(SpotlightTargetId.GOALS_OVERVIEW, rect)
+                    }
+                  }
+                }
+              } else {
+                Modifier
+              }
+            ),
           verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
           Row(
@@ -370,13 +384,6 @@ fun GoalsScreen(
             onAction = {
               editingGoal = null
               showGoalEditor = true
-            },
-            modifier = Modifier.onGloballyPositioned { coords ->
-              if (coords.isAttached) {
-                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                  onRegisterSpotlightBounds(SpotlightTargetId.GOALS_OVERVIEW, rect)
-                }
-              }
             },
           )
         }

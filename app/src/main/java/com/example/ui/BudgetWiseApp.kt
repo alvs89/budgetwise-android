@@ -881,6 +881,7 @@ fun BudgetWiseApp(
                 onBack = { navController.popBackStack() },
                 onOpenAssistant = { showChatSheet = true },
                 onReplayWelcomeGuide = {
+                  spotlightBounds.clear()
                   val popped = navController.popBackStack(HomeRoute, inclusive = false)
                   if (!popped) {
                     navigateTopLevel(HomeRoute)

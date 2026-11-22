@@ -213,6 +213,13 @@ fun HomeScreen(
             Row(
               horizontalArrangement = Arrangement.spacedBy(4.dp),
               verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.onGloballyPositioned { coords ->
+                if (coords.isAttached) {
+                  runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                    onRegisterSpotlightBounds(SpotlightTargetId.TOP_ACTION_BAR, rect)
+                  }
+                }
+              },
             ) {
               Surface(
                 shape = CircleShape,
@@ -236,13 +243,6 @@ fun HomeScreen(
               Row(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.onGloballyPositioned { coords ->
-                  if (coords.isAttached) {
-                    runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                      onRegisterSpotlightBounds(SpotlightTargetId.TOP_ACTION_BAR, rect)
-                    }
-                  }
-                },
               ) {
                 val isHidden = LocalIsBalanceHidden.current
                 IconButton(
@@ -365,24 +365,23 @@ fun HomeScreen(
         }
       }
 
-      // Hero Net Cash Flow Card + Income & Expense Summary Cards (unified spotlight block for Step 1)
+      // Hero Net Cash Flow Card (Step 1 spotlight target) + Income & Expense Summary Cards
       item {
         Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { coords ->
-              if (coords.isAttached) {
-                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                  onRegisterSpotlightBounds(SpotlightTargetId.HOME_OVERVIEW, rect)
-                }
-              }
-            },
+          modifier = Modifier.fillMaxWidth(),
           verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
           Surface(
             shape = MaterialTheme.shapes.large,
             modifier = Modifier
               .fillMaxWidth()
+              .onGloballyPositioned { coords ->
+                if (coords.isAttached) {
+                  runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                    onRegisterSpotlightBounds(SpotlightTargetId.HOME_OVERVIEW, rect)
+                  }
+                }
+              }
               .staggeredEntrance(
                 revealed = dashboardRevealed,
                 alreadyPlayed = hasPlayedEntrance,
