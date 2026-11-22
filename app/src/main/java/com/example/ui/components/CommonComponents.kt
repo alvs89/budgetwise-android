@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
@@ -51,6 +52,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwitchColors
@@ -876,6 +878,9 @@ fun EmptyStatePanel(
   actionLabel: String? = null,
   actionIcon: ImageVector? = null,
   onAction: (() -> Unit)? = null,
+  secondaryActionLabel: String? = null,
+  secondaryActionIcon: ImageVector? = null,
+  onSecondaryAction: (() -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
   FintechCard(modifier = modifier.fillMaxWidth()) {
@@ -936,6 +941,87 @@ fun EmptyStatePanel(
           )
         }
       }
+      if (secondaryActionLabel != null && onSecondaryAction != null) {
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedButton(
+          onClick = onSecondaryAction,
+          contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+        ) {
+          if (secondaryActionIcon != null) {
+            Icon(
+              imageVector = secondaryActionIcon,
+              contentDescription = null,
+              modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+          }
+          Text(
+            text = secondaryActionLabel,
+            maxLines = 1,
+            softWrap = false,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun CompactEmptyBanner(
+  icon: ImageVector,
+  title: String,
+  subtitle: String,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  FintechCard(
+    modifier = modifier.fillMaxWidth(),
+    onClick = onClick,
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Box(
+        modifier = Modifier
+          .size(40.dp)
+          .clip(CircleShape)
+          .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          imageVector = icon,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onPrimaryContainer,
+          modifier = Modifier.size(20.dp),
+        )
+      }
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        Text(
+          text = title,
+          style = MaterialTheme.typography.titleSmall,
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = subtitle,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+      Icon(
+        imageVector = Icons.Rounded.ChevronRight,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.size(22.dp),
+      )
     }
   }
 }

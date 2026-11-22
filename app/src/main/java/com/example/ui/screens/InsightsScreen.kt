@@ -1,11 +1,10 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,20 +19,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoGraph
-import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.DonutLarge
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.ShowChart
 import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,24 +38,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.domain.BudgetHealthStatus
 import com.example.domain.FinanceCalculator
 import com.example.domain.FinancialInsight
 import com.example.domain.InsightSeverity
-import com.example.domain.compactCategoryLabel
 import com.example.ui.components.AutoResizeSingleLineText
 import com.example.ui.components.CategoryDonutChart
+import com.example.ui.components.EmptyStatePanel
 import com.example.ui.components.FintechCard
-import com.example.ui.components.FintechProgressBar
 import com.example.ui.components.LocalIsBalanceHidden
-import com.example.ui.components.MaskedCurrencyText
 import com.example.ui.components.MonthSelectorBar
 import com.example.ui.components.MonthlyIncomeExpenseChart
 import com.example.ui.components.SpendingTrendLineChart
@@ -71,6 +62,7 @@ fun InsightsScreen(
   uiState: BudgetWiseUiState,
   onPreviousMonth: () -> Unit,
   onNextMonth: () -> Unit,
+  onOpenAssistant: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val currency = uiState.preferences.preferredCurrency
@@ -85,6 +77,13 @@ fun InsightsScreen(
     actualSpent = uiState.totalBudgetSpent,
   )
 
+  val hasMultiMonthData = uiState.monthlySeries.any {
+    it.income > BigDecimal.ZERO || it.expenses > BigDecimal.ZERO
+  }
+  val hasExpenseData = uiState.expenseBreakdown.isNotEmpty()
+  val hasDailyData = uiState.dailySpendingSeries.isNotEmpty()
+  val hasAnyChartData = hasMultiMonthData || hasExpenseData || hasDailyData
+
   Box(
     modifier = modifier.fillMaxSize(),
     contentAlignment = Alignment.TopCenter,
@@ -93,222 +92,46 @@ fun InsightsScreen(
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
+      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       item {
-        Column {
-          Text("Insights", style = MaterialTheme.typography.displaySmall)
-          Text(
-            text = "Financial analytics from your local records",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-      }
-
-      // All-Time Lifetime Summary Card (independent of selected month)
-      item {
-        Surface(
-          shape = MaterialTheme.shapes.large,
-          shadowElevation = 2.dp,
-          modifier = Modifier
-            .fillMaxWidth()
-            .testTag("insights_all_time_overview_card"),
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          Box(
+          Column(
             modifier = Modifier
-              .fillMaxWidth()
-              .background(
-                brush = Brush.linearGradient(
-                  colors = listOf(financeColors.heroStart, financeColors.heroEnd)
-                )
-              )
-              .padding(20.dp),
+              .weight(1f)
+              .padding(end = 8.dp),
           ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-              @OptIn(ExperimentalLayoutApi::class)
-              FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-              ) {
-                Text(
-                  text = "ALL-TIME OVERVIEW",
-                  style = MaterialTheme.typography.labelSmall.copy(
-                    letterSpacing = 0.8.sp,
-                    fontWeight = FontWeight.SemiBold,
-                  ),
-                  color = Color.White.copy(alpha = 0.85f),
-                  maxLines = 1,
-                  softWrap = false,
-                  modifier = Modifier
-                    .align(Alignment.CenterVertically)
-                    .padding(end = 8.dp),
-                )
-                Surface(
-                  shape = RoundedCornerShape(50),
-                  color = Color.White.copy(alpha = 0.16f),
-                  modifier = Modifier.align(Alignment.CenterVertically),
-                ) {
-                  Text(
-                    text = "${uiState.allTransactions.size} entries",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                  )
-                }
-              }
-
-              Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                  text = "Overall Net Cash Flow",
-                  style = MaterialTheme.typography.labelMedium,
-                  color = Color.White.copy(alpha = 0.78f),
-                )
-                MaskedCurrencyText(
-                  amount = uiState.allTimeNetCashFlow,
-                  currencyCode = currency,
-                  style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                  ),
-                  color = Color.White,
-                  autoResize = true,
-                  minFontSize = 18.sp,
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("insights_all_time_net_cash_flow"),
-                )
-              }
-
-              HorizontalDivider(color = Color.White.copy(alpha = 0.16f))
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-              ) {
-                Column(
-                  modifier = Modifier.weight(1f),
-                  verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                  AutoResizeSingleLineText(
-                    text = "Total Income",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.74f),
-                    minFontSize = 10.sp,
-                  )
-                  MaskedCurrencyText(
-                    amount = uiState.allTimeIncome,
-                    currencyCode = currency,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color(0xFF86EFAC),
-                    useCompactForLargeAmounts = true,
-                    autoResize = true,
-                    minFontSize = 12.sp,
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .testTag("insights_all_time_income"),
-                  )
-                }
-                Column(
-                  modifier = Modifier.weight(1f),
-                  verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                  AutoResizeSingleLineText(
-                    text = "Total Expenses",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.74f),
-                    minFontSize = 10.sp,
-                  )
-                  MaskedCurrencyText(
-                    amount = uiState.allTimeExpenses,
-                    currencyCode = currency,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color(0xFFFCA5A5),
-                    useCompactForLargeAmounts = true,
-                    autoResize = true,
-                    minFontSize = 12.sp,
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .testTag("insights_all_time_expenses"),
-                  )
-                }
-              }
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-              ) {
-                Column(
-                  modifier = Modifier.weight(1f),
-                  verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                  AutoResizeSingleLineText(
-                    text = "Reserved in Goals",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.74f),
-                    minFontSize = 10.sp,
-                  )
-                  MaskedCurrencyText(
-                    amount = uiState.totalReservedSavings,
-                    currencyCode = currency,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color(0xFF6EE7B7),
-                    useCompactForLargeAmounts = true,
-                    autoResize = true,
-                    minFontSize = 12.sp,
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .testTag("insights_all_time_goal_savings"),
-                  )
-                }
-                Column(
-                  modifier = Modifier.weight(1f),
-                  verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                  AutoResizeSingleLineText(
-                    text = "Overall Savings Rate",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.74f),
-                    minFontSize = 10.sp,
-                  )
-                  AutoResizeSingleLineText(
-                    text = if (uiState.allTimeIncome > BigDecimal.ZERO) {
-                      "${uiState.allTimeSavingsRatePercent.toPlainString()}%"
-                    } else {
-                      "—"
-                    },
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White,
-                    minFontSize = 12.sp,
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-                }
-              }
+            Text("Insights", style = MaterialTheme.typography.displaySmall)
+            Text(
+              text = "Spending patterns and financial trends",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+          ) {
+            IconButton(
+              onClick = onOpenAssistant,
+              modifier = Modifier
+                .size(40.dp)
+                .testTag("insights_assistant_button"),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.Forum,
+                contentDescription = "Ask financial assistant",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(19.dp),
+              )
             }
           }
-        }
-      }
-
-      item {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          Icon(
-            imageVector = Icons.Rounded.CalendarMonth,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
-          )
-          Text(
-            text = "Monthly Breakdown",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-          )
         }
       }
 
@@ -321,7 +144,7 @@ fun InsightsScreen(
         )
       }
 
-      // Equal-height symmetrical KPI Grid
+      // Equal-height symmetrical Monthly KPI Grid (immediately visible above the fold)
       item {
         val isMonthlyDeficit = uiState.netCashFlow < BigDecimal.ZERO
         val savingsSubtext = when {
@@ -451,122 +274,18 @@ fun InsightsScreen(
         }
       }
 
-      // Deterministic Observations
-      item {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          Icon(
-            imageVector = Icons.Rounded.Lightbulb,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
-          )
-          Text("Key Observations", style = MaterialTheme.typography.titleMedium)
-        }
-      }
-
-      items(uiState.insights) { insight ->
-        InsightCard(insight = insight)
-      }
-
-      // 6-Month Income vs Expenses Chart
-      item {
-        FintechCard(modifier = Modifier.fillMaxWidth()) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.AutoGraph,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(20.dp),
-            )
-            Text("6-Month Income vs Expenses", style = MaterialTheme.typography.titleMedium)
-          }
-          Spacer(modifier = Modifier.height(4.dp))
-          Text(
-            text = "Tap any month bar to inspect figures",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Spacer(modifier = Modifier.height(12.dp))
-          MonthlyIncomeExpenseChart(
-            series = uiState.monthlySeries,
-            currencyCode = currency,
+      // Charts surfaced high above the fold; consolidated into one clean empty state when no data exists
+      if (!hasAnyChartData) {
+        item {
+          EmptyStatePanel(
+            icon = Icons.Rounded.AutoGraph,
+            title = "No analytics for ${uiState.selectedMonth.monthNameOnly()} yet",
+            message = "Log income or expense transactions to unlock 6-month cash flow trends, category breakdowns, and daily spending charts.",
+            modifier = Modifier.testTag("insights_empty_charts_panel"),
           )
         }
-      }
-
-      // Expense Distribution Donut Chart
-      item {
-        FintechCard(modifier = Modifier.fillMaxWidth()) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.DonutLarge,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(20.dp),
-            )
-            Text(
-              text = "Expense Distribution · ${uiState.selectedMonth.monthNameOnly()}",
-              style = MaterialTheme.typography.titleMedium,
-            )
-          }
-          Spacer(modifier = Modifier.height(4.dp))
-          Text(
-            text = "Tap any category row to highlight its share",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Spacer(modifier = Modifier.height(12.dp))
-          CategoryDonutChart(
-            breakdown = uiState.expenseBreakdown,
-            currencyCode = currency,
-          )
-        }
-      }
-
-      // Daily Spending Trend Line Chart
-      item {
-        FintechCard(modifier = Modifier.fillMaxWidth()) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.ShowChart,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(20.dp),
-            )
-            Text(
-              text = "Daily Spending Trend · ${uiState.selectedMonth.monthNameOnly()}",
-              style = MaterialTheme.typography.titleMedium,
-            )
-          }
-          Spacer(modifier = Modifier.height(4.dp))
-          Text(
-            text = "Tap any point to inspect daily spending",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Spacer(modifier = Modifier.height(10.dp))
-          SpendingTrendLineChart(
-            points = uiState.dailySpendingSeries,
-            currencyCode = currency,
-            selectedMonth = uiState.selectedMonth,
-          )
-        }
-      }
-
-      // Budget Performance Summary
-      if (uiState.budgetSummaries.isNotEmpty()) {
+      } else {
+        // 6-Month Income vs Expenses Chart
         item {
           FintechCard(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -574,52 +293,118 @@ fun InsightsScreen(
               horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
               Icon(
-                imageVector = Icons.Rounded.AccountBalanceWallet,
+                imageVector = Icons.Rounded.AutoGraph,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
               )
-              Text("Budget Performance", style = MaterialTheme.typography.titleMedium)
+              Text("6-Month Income vs Expenses", style = MaterialTheme.typography.titleMedium)
+            }
+            if (hasMultiMonthData) {
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Tap any month bar to inspect figures",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-              uiState.budgetSummaries.forEach { summary ->
-                val color = when (summary.healthStatus) {
-                  BudgetHealthStatus.NORMAL -> financeColors.income
-                  BudgetHealthStatus.APPROACHING -> financeColors.warning
-                  BudgetHealthStatus.NEAR_LIMIT -> financeColors.nearLimit
-                  BudgetHealthStatus.EXCEEDED -> financeColors.expense
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                  ) {
-                    Text(
-                      text = compactCategoryLabel(summary.category),
-                      style = MaterialTheme.typography.bodyMedium,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                      modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                      text = "${summary.utilizationPercent.toPlainString()}%",
-                      style = MaterialTheme.typography.labelLarge,
-                      color = color,
-                      maxLines = 1,
-                      softWrap = false,
-                    )
-                  }
-                  FintechProgressBar(
-                    progress = (summary.utilizationPercent.toFloat() / 100f).coerceIn(0f, 1f),
-                    color = color,
-                    height = 7.dp,
-                  )
-                }
-              }
-            }
+            MonthlyIncomeExpenseChart(
+              series = uiState.monthlySeries,
+              currencyCode = currency,
+            )
           }
+        }
+
+        // Expense Distribution Donut Chart
+        item {
+          FintechCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.DonutLarge,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+              )
+              Text(
+                text = "Expense Distribution · ${uiState.selectedMonth.monthNameOnly()}",
+                style = MaterialTheme.typography.titleMedium,
+              )
+            }
+            if (hasExpenseData) {
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Tap any category row to highlight its share",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            CategoryDonutChart(
+              breakdown = uiState.expenseBreakdown,
+              currencyCode = currency,
+            )
+          }
+        }
+
+        // Daily Spending Trend Line Chart
+        item {
+          FintechCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.ShowChart,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+              )
+              Text(
+                text = "Daily Spending Trend · ${uiState.selectedMonth.monthNameOnly()}",
+                style = MaterialTheme.typography.titleMedium,
+              )
+            }
+            if (hasDailyData) {
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Tap any point to inspect daily spending",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            SpendingTrendLineChart(
+              points = uiState.dailySpendingSeries,
+              currencyCode = currency,
+              selectedMonth = uiState.selectedMonth,
+            )
+          }
+        }
+      }
+
+      // Key Observations (actionable deterministic observations including budget warnings)
+      if (uiState.insights.isNotEmpty() && hasAnyChartData) {
+        item {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.Lightbulb,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp),
+            )
+            Text("Key Observations", style = MaterialTheme.typography.titleMedium)
+          }
+        }
+
+        items(uiState.insights) { insight ->
+          InsightCard(insight = insight)
         }
       }
     }

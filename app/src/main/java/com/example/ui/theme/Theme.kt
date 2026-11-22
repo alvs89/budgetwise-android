@@ -44,10 +44,10 @@ private val LightColorScheme = lightColorScheme(
   onPrimary = Color.White,
   primaryContainer = MintContainer,
   onPrimaryContainer = ForestGreenDark,
-  secondary = DarkNavy,
+  secondary = ForestGreenLight,
   onSecondary = Color.White,
-  secondaryContainer = NavyContainer,
-  onSecondaryContainer = DarkNavy,
+  secondaryContainer = EmeraldSecondaryContainerLight,
+  onSecondaryContainer = ForestGreenDark,
   tertiary = ForestGreenLight,
   onTertiary = Color.White,
   background = SoftWhiteBg,
@@ -69,10 +69,10 @@ private val DarkColorScheme = darkColorScheme(
   onPrimary = ForestGreenDark,
   primaryContainer = Color(0xFF134E3A),
   onPrimaryContainer = MintContainer,
-  secondary = IceBlue,
-  onSecondary = DarkNavy,
-  secondaryContainer = NavyLight,
-  onSecondaryContainer = NavyContainer,
+  secondary = Color(0xFF5EEAD4),
+  onSecondary = ForestGreenDark,
+  secondaryContainer = EmeraldSecondaryContainerDark,
+  onSecondaryContainer = EmeraldOnSecondaryContainerDark,
   tertiary = Color(0xFF34D399),
   onTertiary = ForestGreenDark,
   background = DeepCharcoalBg,
@@ -117,8 +117,8 @@ fun BudgetWiseTheme(
       warning = WarningAmberDark,
       warningContainer = WarningContainerDark,
       nearLimit = NearLimitOrangeDark,
-      heroStart = Color(0xFF0E3F30),
-      heroEnd = Color(0xFF102A43),
+      heroStart = Color(0xFF0E4534),
+      heroEnd = Color(0xFF0B2A22),
     )
   } else {
     FinanceSemanticColors(
@@ -130,7 +130,7 @@ fun BudgetWiseTheme(
       warningContainer = WarningContainerLight,
       nearLimit = NearLimitOrange,
       heroStart = ForestGreen,
-      heroEnd = DarkNavy,
+      heroEnd = ForestGreenDark,
     )
   }
 

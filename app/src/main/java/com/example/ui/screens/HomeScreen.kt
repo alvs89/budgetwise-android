@@ -33,9 +33,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Savings
@@ -84,8 +84,8 @@ import com.example.domain.FinanceCalculator
 import com.example.ui.components.AllTimeMonthlySpendingChart
 import com.example.ui.components.AutoResizeSingleLineText
 import com.example.ui.components.BudgetProgressCard
+import com.example.ui.components.CompactEmptyBanner
 import com.example.ui.components.ConfirmationDialog
-import com.example.ui.components.EmptyStatePanel
 import com.example.ui.components.FintechCard
 import com.example.ui.components.FintechProgressBar
 import com.example.ui.components.LocalIsBalanceHidden
@@ -112,6 +112,7 @@ fun HomeScreen(
   onToggleBalanceHidden: () -> Unit,
   onOpenNotifications: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenAssistant: () -> Unit = {},
   onNavigateToActivity: () -> Unit,
   onNavigateToBudgets: () -> Unit,
   onNavigateToGoals: () -> Unit,
@@ -210,96 +211,127 @@ fun HomeScreen(
               modifier = Modifier.weight(1f),
             )
             Row(
-              horizontalArrangement = Arrangement.spacedBy(4.dp),
+              horizontalArrangement = Arrangement.spacedBy(5.dp),
               verticalAlignment = Alignment.CenterVertically,
-              modifier = Modifier.onGloballyPositioned { coords ->
-                if (coords.isAttached) {
-                  runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                    onRegisterSpotlightBounds(SpotlightTargetId.TOP_ACTION_BAR, rect)
-                  }
-                }
-              },
             ) {
-              val isHidden = LocalIsBalanceHidden.current
               Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+                modifier = Modifier.onGloballyPositioned { coords ->
+                  if (coords.isAttached) {
+                    runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                      onRegisterSpotlightBounds(SpotlightTargetId.FAB_AI_ASSISTANT, rect)
+                    }
+                  }
+                },
               ) {
                 IconButton(
-                  onClick = onOpenNotifications,
+                  onClick = onOpenAssistant,
                   modifier = Modifier
-                    .size(42.dp)
-                    .testTag("notifications_button"),
+                    .size(40.dp)
+                    .testTag("home_assistant_button"),
                 ) {
-                  BadgedBox(
-                    badge = {
-                      if (uiState.unreadAlertCount > 0) {
-                        Badge(
-                          containerColor = MaterialTheme.colorScheme.error,
-                          contentColor = MaterialTheme.colorScheme.onError,
-                        ) {
-                          Text(
-                            text = if (uiState.unreadAlertCount > 9) "9+" else uiState.unreadAlertCount.toString(),
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                          )
+                  Icon(
+                    imageVector = Icons.Rounded.Forum,
+                    contentDescription = "Open financial assistant",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(19.dp),
+                  )
+                }
+              }
+              Row(
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.onGloballyPositioned { coords ->
+                  if (coords.isAttached) {
+                    runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                      onRegisterSpotlightBounds(SpotlightTargetId.TOP_ACTION_BAR, rect)
+                    }
+                  }
+                },
+              ) {
+                val isHidden = LocalIsBalanceHidden.current
+                Surface(
+                  shape = CircleShape,
+                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                  border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+                ) {
+                  IconButton(
+                    onClick = onOpenNotifications,
+                    modifier = Modifier
+                      .size(40.dp)
+                      .testTag("notifications_button"),
+                  ) {
+                    BadgedBox(
+                      badge = {
+                        if (uiState.unreadAlertCount > 0) {
+                          Badge(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                          ) {
+                            Text(
+                              text = if (uiState.unreadAlertCount > 9) "9+" else uiState.unreadAlertCount.toString(),
+                              style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            )
+                          }
                         }
-                      }
-                    },
+                      },
+                    ) {
+                      Icon(
+                        imageVector = Icons.Rounded.Notifications,
+                        contentDescription = if (uiState.unreadAlertCount > 0) {
+                          "Notifications (${uiState.unreadAlertCount} unread)"
+                        } else {
+                          "Open notifications"
+                        },
+                        tint = if (uiState.unreadAlertCount > 0) {
+                          MaterialTheme.colorScheme.primary
+                        } else {
+                          MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = Modifier.size(19.dp),
+                      )
+                    }
+                  }
+                }
+                Surface(
+                  shape = CircleShape,
+                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                  border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+                ) {
+                  IconButton(
+                    onClick = onToggleBalanceHidden,
+                    modifier = Modifier
+                      .size(40.dp)
+                      .testTag("privacy_toggle_button"),
                   ) {
                     Icon(
-                      imageVector = Icons.Rounded.Notifications,
-                      contentDescription = if (uiState.unreadAlertCount > 0) {
-                        "Notifications (${uiState.unreadAlertCount} unread)"
-                      } else {
-                        "Open notifications"
-                      },
-                      tint = if (uiState.unreadAlertCount > 0) {
-                        MaterialTheme.colorScheme.primary
-                      } else {
-                        MaterialTheme.colorScheme.onSurface
-                      },
-                      modifier = Modifier.size(20.dp),
+                      imageVector = if (isHidden) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                      contentDescription = if (isHidden) "Show balances" else "Hide balances",
+                      tint = if (isHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                      modifier = Modifier.size(19.dp),
                     )
                   }
                 }
-              }
-              Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
-              ) {
-                IconButton(
-                  onClick = onToggleBalanceHidden,
-                  modifier = Modifier
-                    .size(42.dp)
-                    .testTag("privacy_toggle_button"),
+                Surface(
+                  shape = CircleShape,
+                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                  border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
                 ) {
-                  Icon(
-                    imageVector = if (isHidden) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                    contentDescription = if (isHidden) "Show balances" else "Hide balances",
-                    tint = if (isHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(20.dp),
-                  )
-                }
-              }
-              Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
-              ) {
-                IconButton(
-                  onClick = onOpenSettings,
-                  modifier = Modifier
-                    .size(42.dp)
-                    .testTag("settings_button"),
-                ) {
-                  Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = "Open settings",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(20.dp),
-                  )
+                  IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                      .size(40.dp)
+                      .testTag("settings_button"),
+                  ) {
+                    Icon(
+                      imageVector = Icons.Rounded.Settings,
+                      contentDescription = "Open settings",
+                      tint = MaterialTheme.colorScheme.onSurface,
+                      modifier = Modifier.size(19.dp),
+                    )
+                  }
                 }
               }
             }
@@ -451,12 +483,14 @@ fun HomeScreen(
 
               Text(
                 text = if (isAllTime) {
-                  "Cumulative across all ${uiState.allTransactions.size} recorded transactions (excludes starting balances)."
+                  "Cumulative across ${uiState.allTransactions.size} recorded transactions"
                 } else {
-                  "Calculated from recorded monthly transactions (not a bank account balance)."
+                  "Based on recorded monthly transactions"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.72f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
               )
             }
           }
@@ -574,6 +608,12 @@ fun HomeScreen(
 
       // Top Expense Categories & Daily Spending Overview Card
       item {
+        val activeBreakdown = if (isAllTime) uiState.allTimeExpenseBreakdown else uiState.expenseBreakdown
+        val hasSpendingTrend = if (isAllTime) {
+          uiState.allTimeMonthlySpendingSeries.isNotEmpty()
+        } else {
+          uiState.dailySpendingSeries.isNotEmpty()
+        }
         FintechCard(
           modifier = Modifier
             .fillMaxWidth()
@@ -590,26 +630,78 @@ fun HomeScreen(
             onActionClick = onNavigateToInsights,
           )
           Spacer(modifier = Modifier.height(8.dp))
-          TopExpenseCategoriesOverview(
-            breakdown = if (isAllTime) uiState.allTimeExpenseBreakdown else uiState.expenseBreakdown,
-            currencyCode = currency,
-            emptyMessage = if (isAllTime) {
-              "No expenses recorded yet."
-            } else {
-              "No expenses recorded for this month yet."
-            },
-          )
-          Spacer(modifier = Modifier.height(16.dp))
-          if (isAllTime) {
-            AllTimeMonthlySpendingChart(
-              points = uiState.allTimeMonthlySpendingSeries,
-              currencyCode = currency,
+          if (activeBreakdown.isEmpty() && !hasSpendingTrend) {
+            Text(
+              text = if (isAllTime) {
+                "No expenses recorded yet."
+              } else {
+                "No expenses recorded for this month yet."
+              },
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           } else {
-            SpendingTrendLineChart(
-              points = uiState.dailySpendingSeries,
+            TopExpenseCategoriesOverview(
+              breakdown = activeBreakdown,
               currencyCode = currency,
-              selectedMonth = uiState.selectedMonth,
+              emptyMessage = if (isAllTime) {
+                "No expenses recorded yet."
+              } else {
+                "No expenses recorded for this month yet."
+              },
+            )
+            if (hasSpendingTrend) {
+              Spacer(modifier = Modifier.height(16.dp))
+              if (isAllTime) {
+                AllTimeMonthlySpendingChart(
+                  points = uiState.allTimeMonthlySpendingSeries,
+                  currencyCode = currency,
+                )
+              } else {
+                SpendingTrendLineChart(
+                  points = uiState.dailySpendingSeries,
+                  currencyCode = currency,
+                  selectedMonth = uiState.selectedMonth,
+                )
+              }
+            }
+          }
+        }
+      }
+
+      // Recent Transactions (prioritized right below Spending overview for daily checks)
+      item {
+        SectionHeader(
+          title = "Recent transactions",
+          icon = Icons.Rounded.ReceiptLong,
+          actionLabel = "See all",
+          onActionClick = onNavigateToActivity,
+        )
+      }
+
+      if (recentTransactions.isEmpty()) {
+        item {
+          CompactEmptyBanner(
+            icon = Icons.Rounded.ReceiptLong,
+            title = "No transactions yet",
+            subtitle = "Tap to log your first income or expense",
+            onClick = onAddTransaction,
+            modifier = Modifier.testTag("home_empty_transactions_banner"),
+          )
+        }
+      } else {
+        items(recentTransactions, key = { "home_tx_${it.id}" }) { tx ->
+          SwipeToRevealDeleteRow(
+            onDelete = { pendingDeleteTx = tx },
+            deleteTestTag = "home_swipe_delete_transaction_${tx.id}",
+          ) { isRevealed, closeReveal ->
+            TransactionRowItem(
+              transaction = tx,
+              currencyCode = currency,
+              onClick = {
+                if (isRevealed) closeReveal() else onEditTransaction(tx)
+              },
+              categories = uiState.categories,
             )
           }
         }
@@ -627,12 +719,12 @@ fun HomeScreen(
 
       if (uiState.budgetSummaries.isEmpty()) {
         item {
-          EmptyStatePanel(
+          CompactEmptyBanner(
             icon = Icons.Rounded.AccountBalanceWallet,
             title = "No budgets for ${uiState.selectedMonth.monthNameOnly()}",
-            message = "Set spending limits for your categories to keep your monthly expenses on track.",
-            actionLabel = "Set Monthly Budget",
-            onAction = onNavigateToBudgets,
+            subtitle = "Set monthly category limits to track spending",
+            onClick = onNavigateToBudgets,
+            modifier = Modifier.testTag("home_empty_budgets_banner"),
           )
         }
       } else {
@@ -658,13 +750,12 @@ fun HomeScreen(
 
       if (uiState.goalSummaries.isEmpty()) {
         item {
-          EmptyStatePanel(
+          CompactEmptyBanner(
             icon = Icons.Rounded.Savings,
             title = "No savings goals yet",
-            message = "Create a savings target to track progress toward your financial milestones.",
-            actionLabel = "Create Goal",
-            actionIcon = Icons.Rounded.Add,
-            onAction = onNavigateToGoals,
+            subtitle = "Create a target to track financial milestones",
+            onClick = onNavigateToGoals,
+            modifier = Modifier.testTag("home_empty_goals_banner"),
           )
         }
       } else {
@@ -716,45 +807,6 @@ fun HomeScreen(
                 }
               }
             }
-          }
-        }
-      }
-
-      // Recent Transactions
-      item {
-        SectionHeader(
-          title = "Recent transactions",
-          icon = Icons.Rounded.ReceiptLong,
-          actionLabel = "See all",
-          onActionClick = onNavigateToActivity,
-        )
-      }
-
-      if (recentTransactions.isEmpty()) {
-        item {
-          EmptyStatePanel(
-            icon = Icons.Rounded.ReceiptLong,
-            title = "No transactions yet",
-            message = "Log your first income or expense to start tracking your monthly cash flow.",
-            actionLabel = "Add Transaction",
-            actionIcon = Icons.Rounded.Add,
-            onAction = onAddTransaction,
-          )
-        }
-      } else {
-        items(recentTransactions, key = { "home_tx_${it.id}" }) { tx ->
-          SwipeToRevealDeleteRow(
-            onDelete = { pendingDeleteTx = tx },
-            deleteTestTag = "home_swipe_delete_transaction_${tx.id}",
-          ) { isRevealed, closeReveal ->
-            TransactionRowItem(
-              transaction = tx,
-              currencyCode = currency,
-              onClick = {
-                if (isRevealed) closeReveal() else onEditTransaction(tx)
-              },
-              categories = uiState.categories,
-            )
           }
         }
       }

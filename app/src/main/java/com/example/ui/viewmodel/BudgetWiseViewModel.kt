@@ -748,6 +748,73 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     }
   }
 
+  fun copyPreviousMonthBudgets() {
+    viewModelScope.launch {
+      val currentState = uiState.value
+      val targetMonth = currentState.selectedMonth
+      val previousMonth = targetMonth.previous()
+      val previousBudgets = currentState.allBudgets.filter {
+        it.year == previousMonth.year && it.month == previousMonth.month
+      }
+      if (previousBudgets.isEmpty()) {
+        emitInfo("No budgets found in ${previousMonth.monthNameOnly()} to copy.")
+        return@launch
+      }
+
+      val existingCategories = currentState.allBudgets
+        .filter { it.year == targetMonth.year && it.month == targetMonth.month }
+        .map { it.category }
+        .toSet()
+
+      var copiedCount = 0
+      var failedCount = 0
+      previousBudgets.forEach { prev ->
+        if (prev.category !in existingCategories) {
+          val copy = BudgetEntity(
+            id = 0L,
+            category = prev.category,
+            limitCentavos = prev.limitCentavos,
+            year = targetMonth.year,
+            month = targetMonth.month,
+            isSampleData = false,
+          )
+          val ok = if (cloudRepository != null) {
+            cloudRepository.saveBudget(copy).isSuccess
+          } else {
+            repository.saveBudget(copy)
+            true
+          }
+          if (ok) {
+            copiedCount += 1
+            evaluateBudgetThresholdForCategory(
+              category = copy.category,
+              yearMonth = targetMonth,
+              dispatchSystemNotification = false,
+            )
+          } else {
+            failedCount += 1
+          }
+        }
+      }
+
+      when {
+        copiedCount > 0 && failedCount == 0 -> {
+          val plural = if (copiedCount == 1) "budget" else "budgets"
+          emitSuccess("Copied $copiedCount $plural from ${previousMonth.monthNameOnly()}")
+        }
+        copiedCount > 0 -> {
+          emitInfo("Copied $copiedCount budgets; $failedCount could not be synced.")
+        }
+        failedCount > 0 -> {
+          emitError("Unable to copy previous budgets. Please try again.")
+        }
+        else -> {
+          emitInfo("All ${previousMonth.monthNameOnly()} budgets are already set.")
+        }
+      }
+    }
+  }
+
   // Savings Goals CRUD
   fun saveGoal(
     existing: SavingsGoalEntity? = null,

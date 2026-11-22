@@ -23,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -78,6 +79,7 @@ fun BudgetsScreen(
   onNextMonth: () -> Unit,
   onSaveBudget: (existingId: Long, category: String, limitCentavos: Long, yearMonth: YearMonthKey) -> Unit,
   onDeleteBudget: (BudgetSummary) -> Unit,
+  onCopyPreviousMonthBudgets: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   var showEditor by remember { mutableStateOf(false) }
@@ -125,6 +127,12 @@ fun BudgetsScreen(
     )
   }
 
+  val previousMonth = remember(uiState.selectedMonth) { uiState.selectedMonth.previous() }
+  val previousMonthBudgetCount = remember(uiState.allBudgets, previousMonth) {
+    uiState.allBudgets.count { it.year == previousMonth.year && it.month == previousMonth.month }
+  }
+  val hasBudgets = uiState.budgetSummaries.isNotEmpty()
+
   Box(
     modifier = modifier.fillMaxSize(),
     contentAlignment = Alignment.TopCenter,
@@ -133,7 +141,7 @@ fun BudgetsScreen(
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
+      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       item {
@@ -155,16 +163,18 @@ fun BudgetsScreen(
                 .weight(1f)
                 .padding(end = 8.dp),
             )
-            FilledTonalButton(
-              onClick = {
-                editingBudget = null
-                showEditor = true
-              },
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-              modifier = Modifier.testTag("add_budget_button"),
-            ) {
-              Icon(Icons.Rounded.Add, contentDescription = null)
-              Text("New Budget", maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 4.dp))
+            if (hasBudgets) {
+              FilledTonalButton(
+                onClick = {
+                  editingBudget = null
+                  showEditor = true
+                },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier.testTag("add_budget_button"),
+              ) {
+                Icon(Icons.Rounded.Add, contentDescription = null)
+                Text("New Budget", maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 4.dp))
+              }
             }
           }
           Text(
@@ -184,8 +194,9 @@ fun BudgetsScreen(
         )
       }
 
-      // Overall Monthly Budget Summary Hero Card
-      item {
+      // Overall Monthly Budget Summary Hero Card (shown only when at least 1 budget exists)
+      if (hasBudgets) {
+        item {
         val overallUtil = FinanceCalculator.calculateBudgetUtilizationPercent(
           uiState.totalBudgetSpent,
           uiState.totalBudgetLimit,
@@ -302,9 +313,10 @@ fun BudgetsScreen(
             }
           }
         }
+        }
       }
 
-      if (uiState.budgetSummaries.isEmpty()) {
+      if (!hasBudgets) {
         item {
           EmptyStatePanel(
             icon = Icons.Rounded.AccountBalanceWallet,
@@ -315,6 +327,13 @@ fun BudgetsScreen(
               editingBudget = null
               showEditor = true
             },
+            secondaryActionLabel = if (previousMonthBudgetCount > 0) {
+              "Copy ${previousMonth.monthNameOnly()} Budgets ($previousMonthBudgetCount)"
+            } else {
+              null
+            },
+            secondaryActionIcon = if (previousMonthBudgetCount > 0) Icons.Rounded.ContentCopy else null,
+            onSecondaryAction = if (previousMonthBudgetCount > 0) onCopyPreviousMonthBudgets else null,
           )
         }
       } else {

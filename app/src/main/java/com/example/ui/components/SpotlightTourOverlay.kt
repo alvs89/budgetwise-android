@@ -111,8 +111,8 @@ val BudgetWiseSpotlightSteps: List<SpotlightTourStep> = listOf(
     titleRes = R.string.spotlight_step2_title,
     bodyRes = R.string.spotlight_step2_body,
     icon = Icons.Rounded.Forum,
-    highlightPaddingDp = 10f,
-    cornerRadiusDp = 18f,
+    highlightPaddingDp = 8f,
+    cornerRadiusDp = 24f,
   ),
   SpotlightTourStep(
     targetId = SpotlightTargetId.NET_CASH_FLOW_CARD,

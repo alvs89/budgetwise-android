@@ -683,43 +683,23 @@ fun BudgetWiseApp(
           }
         },
         floatingActionButton = {
-          if (!isSettingsRoute) {
-            Column(
-              horizontalAlignment = Alignment.End,
-              verticalArrangement = Arrangement.spacedBy(12.dp),
+          val showQuickAddFab = currentDestination?.hasRoute<HomeRoute>() == true ||
+            currentDestination?.hasRoute<ActivityRoute>() == true
+          if (showQuickAddFab) {
+            FloatingActionButton(
+              onClick = {
+                editingTransaction = null
+                showTransactionSheet = true
+              },
+              containerColor = MaterialTheme.colorScheme.primary,
+              contentColor = MaterialTheme.colorScheme.onPrimary,
+              modifier = Modifier
+                .onGloballyPositioned { coords ->
+                  updateSpotlightBoundsFromCoords(SpotlightTargetId.FAB_ADD_TRANSACTION, coords)
+                }
+                .testTag("fab_add_transaction"),
             ) {
-              SmallFloatingActionButton(
-                onClick = { showChatSheet = true },
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier
-                  .minimumInteractiveComponentSize()
-                  .onGloballyPositioned { coords ->
-                    updateSpotlightBoundsFromCoords(SpotlightTargetId.FAB_AI_ASSISTANT, coords)
-                  }
-                  .testTag("fab_open_chat"),
-              ) {
-                Icon(
-                  imageVector = Icons.Rounded.Forum,
-                  contentDescription = stringResource(R.string.chat_fab_label),
-                )
-              }
-
-              FloatingActionButton(
-                onClick = {
-                  editingTransaction = null
-                  showTransactionSheet = true
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier
-                  .onGloballyPositioned { coords ->
-                    updateSpotlightBoundsFromCoords(SpotlightTargetId.FAB_ADD_TRANSACTION, coords)
-                  }
-                  .testTag("fab_add_transaction"),
-              ) {
-                Icon(Icons.Rounded.Add, contentDescription = "Add transaction")
-              }
+              Icon(Icons.Rounded.Add, contentDescription = "Add transaction")
             }
           }
         },
@@ -774,6 +754,7 @@ fun BudgetWiseApp(
                 onToggleBalanceHidden = viewModel::toggleBalanceHidden,
                 onOpenNotifications = { showNotificationsSheet = true },
                 onOpenSettings = { navController.navigate(SettingsRoute) },
+                onOpenAssistant = { showChatSheet = true },
                 onNavigateToActivity = { navigateTopLevel(ActivityRoute) },
                 onNavigateToBudgets = { navigateTopLevel(BudgetsRoute) },
                 onNavigateToGoals = { navigateTopLevel(GoalsRoute) },
@@ -824,6 +805,7 @@ fun BudgetWiseApp(
                 onNextMonth = viewModel::selectNextMonth,
                 onSaveBudget = viewModel::saveBudget,
                 onDeleteBudget = viewModel::deleteBudget,
+                onCopyPreviousMonthBudgets = viewModel::copyPreviousMonthBudgets,
               )
             }
             composable<GoalsRoute> {
@@ -839,6 +821,7 @@ fun BudgetWiseApp(
                 uiState = uiState,
                 onPreviousMonth = viewModel::selectPreviousMonth,
                 onNextMonth = viewModel::selectNextMonth,
+                onOpenAssistant = { showChatSheet = true },
               )
             }
             composable<SettingsRoute> {

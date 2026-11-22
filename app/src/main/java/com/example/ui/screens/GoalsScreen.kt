@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -123,6 +125,13 @@ fun GoalsScreen(
         showGoalEditor = false
         editingGoal = null
       },
+      onDelete = editingGoal?.let { existingGoal ->
+        {
+          showGoalEditor = false
+          editingGoal = null
+          pendingDeleteGoal = existingGoal
+        }
+      },
       onDismiss = {
         showGoalEditor = false
         editingGoal = null
@@ -167,6 +176,21 @@ fun GoalsScreen(
 
   val totalSaved = uiState.goalSummaries.fold(BigDecimal.ZERO) { acc, item -> acc.add(item.savedAmount) }
   val totalTarget = uiState.goalSummaries.fold(BigDecimal.ZERO) { acc, item -> acc.add(item.targetAmount) }
+  val hasGoals = uiState.goalSummaries.isNotEmpty()
+  val overallGoalProgress = remember(totalSaved, totalTarget) {
+    if (totalTarget > BigDecimal.ZERO) {
+      totalSaved.toFloat() / totalTarget.toFloat()
+    } else {
+      0f
+    }.coerceIn(0f, 1f)
+  }
+  val overallGoalPercent = remember(totalSaved, totalTarget) {
+    if (totalTarget > BigDecimal.ZERO) {
+      ((totalSaved.toDouble() / totalTarget.toDouble()) * 100.0).coerceAtLeast(0.0)
+    } else {
+      0.0
+    }
+  }
 
   Box(
     modifier = modifier.fillMaxSize(),
@@ -176,7 +200,7 @@ fun GoalsScreen(
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
+      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
       verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       item {
@@ -197,21 +221,23 @@ fun GoalsScreen(
                 .weight(1f)
                 .padding(end = 8.dp),
             )
-            FilledTonalButton(
-              onClick = {
-                editingGoal = null
-                showGoalEditor = true
-              },
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-              modifier = Modifier.testTag("add_goal_button"),
-            ) {
-              Icon(Icons.Rounded.Add, contentDescription = null)
-              Text(
-                text = "New Goal",
-                maxLines = 1,
-                softWrap = false,
-                modifier = Modifier.padding(start = 4.dp),
-              )
+            if (hasGoals) {
+              FilledTonalButton(
+                onClick = {
+                  editingGoal = null
+                  showGoalEditor = true
+                },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                modifier = Modifier.testTag("add_goal_button"),
+              ) {
+                Icon(Icons.Rounded.Add, contentDescription = null)
+                Text(
+                  text = "New Goal",
+                  maxLines = 1,
+                  softWrap = false,
+                  modifier = Modifier.padding(start = 4.dp),
+                )
+              }
             }
           }
           Text(
@@ -222,81 +248,95 @@ fun GoalsScreen(
         }
       }
 
-      // Total Reserved Savings Hero Card
-      item {
-        val isHidden = LocalIsBalanceHidden.current
-        Surface(
-          shape = MaterialTheme.shapes.large,
-          shadowElevation = 2.dp,
-          modifier = Modifier.fillMaxWidth(),
-        ) {
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .background(
-                brush = Brush.linearGradient(
-                  colors = listOf(financeColors.heroStart, financeColors.heroEnd)
-                )
-              )
-              .padding(20.dp),
+      // Total Reserved Savings Hero Card (shown once at least 1 goal exists)
+      if (hasGoals) {
+        item {
+          val isHidden = LocalIsBalanceHidden.current
+          Surface(
+            shape = MaterialTheme.shapes.large,
+            shadowElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth(),
           ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-              @OptIn(ExperimentalLayoutApi::class)
-              FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-              ) {
-                Text(
-                  text = "RESERVED SAVINGS",
-                  style = MaterialTheme.typography.labelSmall.copy(
-                    letterSpacing = 0.8.sp,
-                    fontWeight = FontWeight.SemiBold,
-                  ),
-                  color = Color.White.copy(alpha = 0.85f),
-                  maxLines = 1,
-                  softWrap = false,
-                  modifier = Modifier
-                    .align(Alignment.CenterVertically)
-                    .padding(end = 8.dp),
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                  brush = Brush.linearGradient(
+                    colors = listOf(financeColors.heroStart, financeColors.heroEnd)
+                  )
                 )
-                Surface(
-                  shape = RoundedCornerShape(50),
-                  color = Color.White.copy(alpha = 0.16f),
-                  modifier = Modifier.align(Alignment.CenterVertically),
+                .padding(20.dp),
+            ) {
+              Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                   Text(
-                    text = "${uiState.goalSummaries.count { it.status == GoalStatus.COMPLETED }}/${uiState.goalSummaries.size} completed",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White,
+                    text = "RESERVED SAVINGS",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                      letterSpacing = 0.8.sp,
+                      fontWeight = FontWeight.SemiBold,
+                    ),
+                    color = Color.White.copy(alpha = 0.85f),
                     maxLines = 1,
                     softWrap = false,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    modifier = Modifier
+                      .align(Alignment.CenterVertically)
+                      .padding(end = 8.dp),
                   )
+                  Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color.White.copy(alpha = 0.16f),
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                  ) {
+                    Text(
+                      text = "${uiState.goalSummaries.count { it.status == GoalStatus.COMPLETED }}/${uiState.goalSummaries.size} completed",
+                      style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                      color = Color.White,
+                      maxLines = 1,
+                      softWrap = false,
+                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    )
+                  }
                 }
+
+                MaskedCurrencyText(
+                  amount = totalSaved,
+                  currencyCode = currency,
+                  style = MaterialTheme.typography.displayLarge,
+                  color = Color.White,
+                  autoResize = true,
+                  minFontSize = 22.sp,
+                  modifier = Modifier.fillMaxWidth(),
+                )
+
+                FintechProgressBar(
+                  progress = overallGoalProgress,
+                  color = Color(0xFF6EE7B7),
+                  trackColor = Color.White.copy(alpha = 0.2f),
+                  height = 8.dp,
+                )
+
+                Text(
+                  text = String.format(
+                    java.util.Locale.getDefault(),
+                    "%.1f%% of %s combined targets",
+                    overallGoalPercent,
+                    FinanceCalculator.formatCurrencyOrMasked(totalTarget, currency, isHidden),
+                  ),
+                  style = MaterialTheme.typography.labelSmall,
+                  color = Color.White.copy(alpha = 0.78f),
+                )
               }
-
-              MaskedCurrencyText(
-                amount = totalSaved,
-                currencyCode = currency,
-                style = MaterialTheme.typography.displayLarge,
-                color = Color.White,
-                autoResize = true,
-                minFontSize = 22.sp,
-                modifier = Modifier.fillMaxWidth(),
-              )
-
-              Text(
-                text = "Combined goal targets: ${FinanceCalculator.formatCurrencyOrMasked(totalTarget, currency, isHidden)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.78f),
-              )
             }
           }
         }
       }
 
-      if (uiState.goalSummaries.isEmpty()) {
+      if (!hasGoals) {
         item {
           EmptyStatePanel(
             icon = Icons.Rounded.Savings,
@@ -330,11 +370,6 @@ fun GoalsScreen(
                 showGoalEditor = true
               }
             },
-            onDelete = {
-              if (rawGoal != null) {
-                pendingDeleteGoal = rawGoal
-              }
-            },
           )
         }
       }
@@ -349,7 +384,6 @@ private fun GoalDetailCard(
   onContribute: () -> Unit,
   onHistory: () -> Unit,
   onEdit: () -> Unit,
-  onDelete: () -> Unit,
 ) {
   val financeColors = LocalFinanceColors.current
   val rawProgress = (goal.completionPercent.toFloat() / 100f).coerceIn(0f, 1f)
@@ -469,18 +503,13 @@ private fun GoalDetailCard(
           Text("History", maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 4.dp))
         }
       }
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onEdit, modifier = Modifier.minimumInteractiveComponentSize()) {
-          Icon(Icons.Rounded.Edit, contentDescription = "Edit goal", modifier = Modifier.size(20.dp))
-        }
-        IconButton(onClick = onDelete, modifier = Modifier.minimumInteractiveComponentSize()) {
-          Icon(
-            Icons.Rounded.DeleteOutline,
-            contentDescription = "Delete goal",
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(20.dp),
-          )
-        }
+      IconButton(
+        onClick = onEdit,
+        modifier = Modifier
+          .minimumInteractiveComponentSize()
+          .testTag("edit_goal_${goal.goalId}"),
+      ) {
+        Icon(Icons.Rounded.Edit, contentDescription = "Edit goal", modifier = Modifier.size(20.dp))
       }
     }
   }
@@ -492,6 +521,7 @@ private fun GoalEditorDialog(
   existing: SavingsGoalEntity?,
   currencyCode: String,
   onSave: (name: String, targetCentavos: Long, targetDateEpochDay: Long, status: GoalStatus) -> Unit,
+  onDelete: (() -> Unit)? = null,
   onDismiss: () -> Unit,
 ) {
   if (dismissIfAppLocked(onDismiss)) return
@@ -531,10 +561,34 @@ private fun GoalEditorDialog(
   StableFormDialog(
     onDismissRequest = onDismiss,
     title = {
-      Text(
-        text = if (existing == null) "New Savings Goal" else "Edit Savings Goal",
-        style = MaterialTheme.typography.titleLarge,
-      )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = if (existing == null) "New Savings Goal" else "Edit Savings Goal",
+          style = MaterialTheme.typography.titleLarge,
+          modifier = Modifier.weight(1f),
+        )
+        if (existing != null && onDelete != null) {
+          TextButton(
+            onClick = onDelete,
+            colors = ButtonDefaults.textButtonColors(
+              contentColor = MaterialTheme.colorScheme.error,
+            ),
+            modifier = Modifier.testTag("dialog_delete_goal_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.DeleteOutline,
+              contentDescription = null,
+              modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Delete", maxLines = 1, softWrap = false)
+          }
+        }
+      }
     },
     confirmButton = {
       Button(

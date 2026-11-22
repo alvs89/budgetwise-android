@@ -1,5 +1,12 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,12 +15,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Clear
@@ -23,14 +32,19 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,9 +54,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.TransactionEntity
+import com.example.domain.FinanceCalculator
 import com.example.domain.TransactionSortOrder
 import com.example.domain.TransactionType
 import com.example.domain.compactCategoryLabel
@@ -50,13 +67,16 @@ import com.example.ui.components.AutoResizeSingleLineText
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.EmptyStatePanel
 import com.example.ui.components.LocalIsAppLocked
+import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.MonthSelectorBar
 import com.example.ui.components.SwipeToRevealDeleteRow
 import com.example.ui.components.TransactionRowItem
 import com.example.ui.components.categoryIcon
 import com.example.ui.components.categoryTint
 import com.example.ui.viewmodel.BudgetWiseUiState
+import java.math.BigDecimal
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActivityScreen(
   uiState: BudgetWiseUiState,
@@ -77,6 +97,8 @@ fun ActivityScreen(
   var showSortMenu by remember { mutableStateOf(false) }
   var pendingDeleteTx by remember { mutableStateOf<TransactionEntity?>(null) }
   val isAppLocked = LocalIsAppLocked.current
+  val isBalanceHidden = LocalIsBalanceHidden.current
+  val currency = uiState.preferences.preferredCurrency
 
   LaunchedEffect(isAppLocked) {
     if (isAppLocked && showSortMenu) {
@@ -98,6 +120,28 @@ fun ActivityScreen(
   }
 
   val filter = uiState.activityFilter
+  val filteredList = uiState.filteredActivityTransactions
+  val filteredNetCentavos = remember(filteredList) {
+    filteredList.fold(0L) { acc, tx ->
+      if (tx.type == TransactionType.INCOME) acc + tx.amountCentavos else acc - tx.amountCentavos
+    }
+  }
+  val filteredSubtitle = remember(filteredList.size, filteredNetCentavos, currency, isBalanceHidden) {
+    val countText = if (filteredList.size == 1) "1 transaction" else "${filteredList.size} transactions"
+    if (filteredList.isEmpty()) {
+      countText
+    } else {
+      val netAmount = FinanceCalculator.centavosToBigDecimal(kotlin.math.abs(filteredNetCentavos))
+      val formatted = FinanceCalculator.formatCurrencyOrMasked(netAmount, currency, isBalanceHidden)
+      val prefix = when {
+        isBalanceHidden -> ""
+        filteredNetCentavos > 0L -> "+"
+        filteredNetCentavos < 0L -> "-"
+        else -> ""
+      }
+      "$countText · $prefix$formatted"
+    }
+  }
   val availableCategories = remember(uiState.allTransactions, filter.typeFilter) {
     uiState.allTransactions
       .filter { filter.typeFilter == null || it.type == filter.typeFilter }
@@ -135,33 +179,44 @@ fun ActivityScreen(
               minFontSize = 20.sp,
             )
             Text(
-              text = "${uiState.filteredActivityTransactions.size} transactions",
+              text = filteredSubtitle,
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.testTag("activity_filtered_summary"),
             )
           }
           Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            IconButton(
-              onClick = onExportData,
-              modifier = Modifier
-                .minimumInteractiveComponentSize()
-                .testTag("activity_export_button"),
+            Surface(
+              shape = CircleShape,
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+              border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
             ) {
-              Icon(
-                imageVector = Icons.Rounded.FileDownload,
-                contentDescription = "Export financial report",
-                tint = MaterialTheme.colorScheme.onBackground,
-              )
+              IconButton(
+                onClick = onExportData,
+                modifier = Modifier
+                  .size(40.dp)
+                  .testTag("activity_export_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.Rounded.FileDownload,
+                  contentDescription = "Export financial report",
+                  tint = MaterialTheme.colorScheme.onSurface,
+                  modifier = Modifier.size(19.dp),
+                )
+              }
             }
             Box {
               OutlinedButton(
                 onClick = { showSortMenu = true },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 modifier = Modifier.testTag("sort_button"),
               ) {
-                Icon(Icons.Rounded.SwapVert, contentDescription = null)
+                Icon(Icons.Rounded.SwapVert, contentDescription = null, modifier = Modifier.size(18.dp))
                 Text(
                   text = filter.sortOrder.label,
                   maxLines = 1,
@@ -188,8 +243,44 @@ fun ActivityScreen(
         }
       }
 
-      if (filter.selectedMonthOnly) {
-        item {
+      // Clear Date Scope Toggle (This Month vs All Dates)
+      item {
+        val dateScopeOptions = listOf(true to "This Month", false to "All Dates")
+        SingleChoiceSegmentedButtonRow(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(42.dp),
+        ) {
+          dateScopeOptions.forEachIndexed { index, (monthOnlyValue, label) ->
+            SegmentedButton(
+              selected = filter.selectedMonthOnly == monthOnlyValue,
+              onClick = { onToggleMonthOnly(monthOnlyValue) },
+              shape = SegmentedButtonDefaults.itemShape(
+                index = index,
+                count = dateScopeOptions.size,
+              ),
+              icon = {},
+              modifier = Modifier.testTag(
+                if (monthOnlyValue) "activity_scope_this_month" else "activity_scope_all_dates"
+              ),
+            ) {
+              AutoResizeSingleLineText(
+                text = label,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = LocalContentColor.current,
+                minFontSize = 11.sp,
+              )
+            }
+          }
+        }
+      }
+
+      item {
+        AnimatedVisibility(
+          visible = filter.selectedMonthOnly,
+          enter = fadeIn(tween(180)) + expandVertically(tween(200)),
+          exit = fadeOut(tween(150)) + shrinkVertically(tween(180)),
+        ) {
           MonthSelectorBar(
             selectedMonth = uiState.selectedMonth,
             onPreviousMonth = onPreviousMonth,
@@ -203,7 +294,13 @@ fun ActivityScreen(
         OutlinedTextField(
           value = filter.searchQuery,
           onValueChange = onSearchQueryChange,
-          placeholder = { Text("Search title, category, or notes...") },
+          placeholder = {
+            Text(
+              text = "Search transactions...",
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          },
           leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
           trailingIcon = {
             if (filter.searchQuery.isNotEmpty()) {
@@ -219,7 +316,7 @@ fun ActivityScreen(
         )
       }
 
-      // Scope & Type filter chips
+      // Type filter chips (date scope is controlled cleanly by the segmented toggle above)
       item {
         Row(
           modifier = Modifier
@@ -227,11 +324,6 @@ fun ActivityScreen(
             .horizontalScroll(rememberScrollState()),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          FilterChip(
-            selected = filter.selectedMonthOnly,
-            onClick = { onToggleMonthOnly(!filter.selectedMonthOnly) },
-            label = { Text(if (filter.selectedMonthOnly) uiState.selectedMonth.shortLabel() else "All dates") },
-          )
           FilterChip(
             selected = filter.typeFilter == null,
             onClick = { onTypeFilterChange(null) },
