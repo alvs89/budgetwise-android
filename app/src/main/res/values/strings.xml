@@ -119,20 +119,24 @@
     <string name="crop_photo_saving">Saving…</string>
     <string name="crop_photo_read_error">Unable to read selected image. Please try another photo.</string>
 
-    <!-- Live In-App Spotlight Tour -->
+    <!-- Live In-App 7-Step Tab-Synchronized Spotlight Tour -->
     <string name="spotlight_step_counter">%1$d of %2$d</string>
     <string name="welcome_skip">Skip</string>
     <string name="welcome_back">Back</string>
     <string name="welcome_next">Next</string>
     <string name="welcome_done">Done</string>
-    <string name="spotlight_step1_title">Log Transactions Fast</string>
-    <string name="spotlight_step1_body">Tap + anytime to record income or expenses with the built-in amount calculator.</string>
-    <string name="spotlight_step2_title">BudgetWise AI Assistant</string>
-    <string name="spotlight_step2_body">Chat with your private AI assistant to check budgets, trends, or savings advice.</string>
-    <string name="spotlight_step3_title">Live Net Cash Flow</string>
-    <string name="spotlight_step3_body">Your monthly and all-time cash flow and savings rate update as you log entries.</string>
-    <string name="spotlight_step4_title">Alerts, Privacy &amp; Settings</string>
-    <string name="spotlight_step4_body">Check alerts, tap the eye to hide balances, or open Settings for currency and PIN lock.</string>
-    <string name="spotlight_step5_title">Explore Your Workspace</string>
-    <string name="spotlight_step5_body">Switch tabs to inspect Activity, manage Budgets, grow Goals, and explore Insights.</string>
+    <string name="spotlight_step1_title">Welcome to Your Home Dashboard</string>
+    <string name="spotlight_step1_body">View your net cash flow, total income, expenses, and recent transactions at a glance.</string>
+    <string name="spotlight_step2_title">Log Transactions Quickly</string>
+    <string name="spotlight_step2_body">Tap + anytime to record an income or expense using smart categories and the built-in calculator.</string>
+    <string name="spotlight_step3_title">Manage Your Activity</string>
+    <string name="spotlight_step3_body">Browse your full transaction history—search, filter by date or type, and tap entries to edit or delete.</string>
+    <string name="spotlight_step4_title">Set Monthly Budgets</string>
+    <string name="spotlight_step4_body">Create category spending limits to monitor utilization, remaining balances, and overspending warnings.</string>
+    <string name="spotlight_step5_title">Track Savings Goals</string>
+    <string name="spotlight_step5_body">Set independent savings targets, record contributions, and watch your progress grow over time.</string>
+    <string name="spotlight_step6_title">Explore Financial Insights</string>
+    <string name="spotlight_step6_body">Review visual charts, category breakdowns, spending trends, and personalized financial summaries.</string>
+    <string name="spotlight_step7_title">Alerts, Privacy &amp; Settings</string>
+    <string name="spotlight_step7_body">Check notifications, hide balances in public with the Eye icon, or open Settings to customize your preferences.</string>
 </resources>

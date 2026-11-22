@@ -108,6 +108,7 @@ import com.example.data.preferences.UserPreferencesRepository
 import com.example.domain.AlertDestination
 import com.example.domain.ExportFormat
 import com.example.domain.FinancialReportExporter
+import com.example.ui.components.BudgetWiseSpotlightSteps
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.ExportReportDialog
 import com.example.ui.components.FinancialChatSheet
@@ -116,6 +117,7 @@ import com.example.ui.components.LocalIsAppLocked
 import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.NotificationCenterSheet
 import com.example.ui.components.PinLockOverlay
+import com.example.ui.components.SpotlightTab
 import com.example.ui.components.SpotlightTargetId
 import com.example.ui.components.SpotlightTourOverlay
 import com.example.ui.components.TransactionEditorSheet
@@ -428,12 +430,12 @@ fun BudgetWiseApp(
   }
   var isReplayingTour by rememberSaveable { mutableStateOf(false) }
   var spotlightStepIndex by rememberSaveable { mutableIntStateOf(0) }
-  var homeScrollToTopSignal by remember { mutableIntStateOf(0) }
+  var tourScrollToTopSignal by remember { mutableIntStateOf(0) }
 
   LaunchedEffect(uiState.shouldShowSpotlightTour) {
     if (uiState.shouldShowSpotlightTour) {
       spotlightStepIndex = 0
-      homeScrollToTopSignal += 1
+      tourScrollToTopSignal += 1
     }
   }
 
@@ -652,11 +654,7 @@ fun BudgetWiseApp(
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
           if (!useNavRail && !isSettingsRoute) {
-            NavigationBar(
-              modifier = Modifier.onGloballyPositioned { coords ->
-                updateSpotlightBoundsFromCoords(SpotlightTargetId.BOTTOM_NAV_BAR, coords)
-              },
-            ) {
+            NavigationBar {
               TopLevelDestinations.forEach { dest ->
                 val selected = when (dest.route) {
                   is HomeRoute -> currentDestination?.hasRoute<HomeRoute>() == true
@@ -710,11 +708,7 @@ fun BudgetWiseApp(
             .padding(innerPadding),
         ) {
           if (useNavRail && !isSettingsRoute) {
-            NavigationRail(
-              modifier = Modifier.onGloballyPositioned { coords ->
-                updateSpotlightBoundsFromCoords(SpotlightTargetId.BOTTOM_NAV_BAR, coords)
-              },
-            ) {
+            NavigationRail {
               TopLevelDestinations.forEach { dest ->
                 val selected = when (dest.route) {
                   is HomeRoute -> currentDestination?.hasRoute<HomeRoute>() == true
@@ -771,7 +765,7 @@ fun BudgetWiseApp(
                 dashboardRevealed = dashboardRevealed,
                 hasPlayedEntrance = hasPlayedDashboardEntrance,
                 onEntranceAnimationPlayed = { hasPlayedDashboardEntrance = true },
-                scrollToTopSignal = homeScrollToTopSignal,
+                scrollToTopSignal = tourScrollToTopSignal,
                 onRegisterSpotlightBounds = updateSpotlightBounds,
               )
             }
@@ -796,6 +790,8 @@ fun BudgetWiseApp(
                   showTransactionSheet = true
                 },
                 onExportData = { showExportDialog = true },
+                scrollToTopSignal = tourScrollToTopSignal,
+                onRegisterSpotlightBounds = updateSpotlightBounds,
               )
             }
             composable<BudgetsRoute> {
@@ -806,6 +802,8 @@ fun BudgetWiseApp(
                 onSaveBudget = viewModel::saveBudget,
                 onDeleteBudget = viewModel::deleteBudget,
                 onCopyPreviousMonthBudgets = viewModel::copyPreviousMonthBudgets,
+                scrollToTopSignal = tourScrollToTopSignal,
+                onRegisterSpotlightBounds = updateSpotlightBounds,
               )
             }
             composable<GoalsRoute> {
@@ -814,6 +812,8 @@ fun BudgetWiseApp(
                 onSaveGoal = viewModel::saveGoal,
                 onDeleteGoal = viewModel::deleteGoal,
                 onRecordContribution = viewModel::recordGoalContribution,
+                scrollToTopSignal = tourScrollToTopSignal,
+                onRegisterSpotlightBounds = updateSpotlightBounds,
               )
             }
             composable<InsightsRoute> {
@@ -822,6 +822,8 @@ fun BudgetWiseApp(
                 onPreviousMonth = viewModel::selectPreviousMonth,
                 onNextMonth = viewModel::selectNextMonth,
                 onOpenAssistant = { showChatSheet = true },
+                scrollToTopSignal = tourScrollToTopSignal,
+                onRegisterSpotlightBounds = updateSpotlightBounds,
               )
             }
             composable<SettingsRoute> {
@@ -882,8 +884,8 @@ fun BudgetWiseApp(
                   if (!popped) {
                     navigateTopLevel(HomeRoute)
                   }
-                  homeScrollToTopSignal += 1
                   spotlightStepIndex = 0
+                  tourScrollToTopSignal += 1
                   isReplayingTour = true
                 },
               )
@@ -895,33 +897,73 @@ fun BudgetWiseApp(
         val showSpotlightOverlay = !uiState.isLoading &&
           !effectiveAppLock &&
           !showLaunchSplash &&
-          isHomeRoute &&
+          !isSettingsRoute &&
           (uiState.shouldShowSpotlightTour || isReplayingTour)
+
+        val safeTourIndex = spotlightStepIndex.coerceIn(0, BudgetWiseSpotlightSteps.lastIndex)
+        val activeTourStep = BudgetWiseSpotlightSteps[safeTourIndex]
+
+        val isTargetTabActive = when (activeTourStep.tab) {
+          SpotlightTab.HOME -> currentDestination?.hasRoute<HomeRoute>() == true
+          SpotlightTab.ACTIVITY -> currentDestination?.hasRoute<ActivityRoute>() == true
+          SpotlightTab.BUDGETS -> currentDestination?.hasRoute<BudgetsRoute>() == true
+          SpotlightTab.GOALS -> currentDestination?.hasRoute<GoalsRoute>() == true
+          SpotlightTab.INSIGHTS -> currentDestination?.hasRoute<InsightsRoute>() == true
+        }
+
+        LaunchedEffect(showSpotlightOverlay, safeTourIndex) {
+          if (showSpotlightOverlay) {
+            val targetRoute: Any = when (activeTourStep.tab) {
+              SpotlightTab.HOME -> HomeRoute
+              SpotlightTab.ACTIVITY -> ActivityRoute
+              SpotlightTab.BUDGETS -> BudgetsRoute
+              SpotlightTab.GOALS -> GoalsRoute
+              SpotlightTab.INSIGHTS -> InsightsRoute
+            }
+            val alreadyOnTargetTab = when (activeTourStep.tab) {
+              SpotlightTab.HOME -> currentDestination?.hasRoute<HomeRoute>() == true
+              SpotlightTab.ACTIVITY -> currentDestination?.hasRoute<ActivityRoute>() == true
+              SpotlightTab.BUDGETS -> currentDestination?.hasRoute<BudgetsRoute>() == true
+              SpotlightTab.GOALS -> currentDestination?.hasRoute<GoalsRoute>() == true
+              SpotlightTab.INSIGHTS -> currentDestination?.hasRoute<InsightsRoute>() == true
+            }
+            if (!alreadyOnTargetTab) {
+              spotlightBounds.remove(activeTourStep.targetId)
+              navigateTopLevel(targetRoute)
+            }
+            tourScrollToTopSignal += 1
+          }
+        }
+
+        fun finishSpotlightTour() {
+          isReplayingTour = false
+          spotlightStepIndex = 0
+          if (uiState.shouldShowSpotlightTour) {
+            viewModel.completeSpotlightTour()
+          }
+          if (!isHomeRoute) {
+            navigateTopLevel(HomeRoute)
+          }
+          tourScrollToTopSignal += 1
+        }
 
         SpotlightTourHost(
           visible = showSpotlightOverlay,
-          currentStepIndex = spotlightStepIndex,
+          currentStepIndex = safeTourIndex,
+          isTargetTabActive = isTargetTabActive,
           spotlightBounds = spotlightBounds,
           onNext = {
-            spotlightStepIndex += 1
+            if (safeTourIndex < BudgetWiseSpotlightSteps.lastIndex) {
+              spotlightStepIndex = safeTourIndex + 1
+            } else {
+              finishSpotlightTour()
+            }
           },
           onBack = {
-            spotlightStepIndex = (spotlightStepIndex - 1).coerceAtLeast(0)
+            spotlightStepIndex = (safeTourIndex - 1).coerceAtLeast(0)
           },
-          onSkip = {
-            isReplayingTour = false
-            spotlightStepIndex = 0
-            if (uiState.shouldShowSpotlightTour) {
-              viewModel.completeSpotlightTour()
-            }
-          },
-          onDone = {
-            isReplayingTour = false
-            spotlightStepIndex = 0
-            if (uiState.shouldShowSpotlightTour) {
-              viewModel.completeSpotlightTour()
-            }
-          },
+          onSkip = { finishSpotlightTour() },
+          onDone = { finishSpotlightTour() },
         )
         }
           }
@@ -965,6 +1007,7 @@ fun BudgetWiseApp(
 private fun SpotlightTourHost(
   visible: Boolean,
   currentStepIndex: Int,
+  isTargetTabActive: Boolean,
   spotlightBounds: Map<SpotlightTargetId, Rect>,
   onNext: () -> Unit,
   onBack: () -> Unit,
@@ -972,11 +1015,12 @@ private fun SpotlightTourHost(
   onDone: () -> Unit,
 ) {
   // Only read the SnapshotStateMap when the tour overlay is actually visible so layout bounds
-  // updates on Home never invalidate the parent Scaffold or NavHost composition scope.
+  // updates never invalidate the parent Scaffold or NavHost composition scope.
   val boundsSnapshot = if (visible) spotlightBounds.toMap() else emptyMap()
   SpotlightTourOverlay(
     visible = visible,
     currentStepIndex = currentStepIndex,
+    isTargetTabActive = isTargetTabActive,
     targetBounds = boundsSnapshot,
     onNext = onNext,
     onBack = onBack,

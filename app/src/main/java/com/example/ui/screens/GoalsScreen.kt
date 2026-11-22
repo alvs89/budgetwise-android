@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -60,6 +61,7 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,8 +69,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -93,6 +98,7 @@ import com.example.ui.components.FintechProgressBar
 import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.MaskedCurrencyText
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.SpotlightTargetId
 import com.example.ui.components.StableFormDialog
 import com.example.ui.components.dismissIfAppLocked
 import com.example.ui.theme.LocalFinanceColors
@@ -105,8 +111,16 @@ fun GoalsScreen(
   onSaveGoal: (existing: SavingsGoalEntity?, name: String, targetCentavos: Long, targetDateEpochDay: Long, status: GoalStatus) -> Unit,
   onDeleteGoal: (SavingsGoalEntity) -> Unit,
   onRecordContribution: (goalId: Long, amountCentavos: Long, isWithdrawal: Boolean, note: String, dateEpochDay: Long) -> Unit,
+  scrollToTopSignal: Int = 0,
+  onRegisterSpotlightBounds: (SpotlightTargetId, Rect) -> Unit = { _, _ -> },
   modifier: Modifier = Modifier,
 ) {
+  val listState = rememberLazyListState()
+  LaunchedEffect(scrollToTopSignal) {
+    if (scrollToTopSignal > 0) {
+      listState.scrollToItem(0)
+    }
+  }
   var showGoalEditor by remember { mutableStateOf(false) }
   var editingGoal by remember { mutableStateOf<SavingsGoalEntity?>(null) }
   var contributionTarget by remember { mutableStateOf<SavingsGoalSummary?>(null) }
@@ -197,6 +211,7 @@ fun GoalsScreen(
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
+      state = listState,
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
@@ -255,7 +270,15 @@ fun GoalsScreen(
           Surface(
             shape = MaterialTheme.shapes.large,
             shadowElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .onGloballyPositioned { coords ->
+                if (coords.isAttached) {
+                  runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                    onRegisterSpotlightBounds(SpotlightTargetId.GOALS_OVERVIEW, rect)
+                  }
+                }
+              },
           ) {
             Box(
               modifier = Modifier
@@ -347,6 +370,13 @@ fun GoalsScreen(
             onAction = {
               editingGoal = null
               showGoalEditor = true
+            },
+            modifier = Modifier.onGloballyPositioned { coords ->
+              if (coords.isAttached) {
+                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                  onRegisterSpotlightBounds(SpotlightTargetId.GOALS_OVERVIEW, rect)
+                }
+              }
             },
           )
         }

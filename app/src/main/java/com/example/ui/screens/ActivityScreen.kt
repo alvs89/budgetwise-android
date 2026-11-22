@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -53,6 +54,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,6 +73,7 @@ import com.example.ui.components.EmptyStatePanel
 import com.example.ui.components.LocalIsAppLocked
 import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.MonthSelectorBar
+import com.example.ui.components.SpotlightTargetId
 import com.example.ui.components.SwipeToRevealDeleteRow
 import com.example.ui.components.TransactionRowItem
 import com.example.ui.components.categoryIcon
@@ -92,8 +97,16 @@ fun ActivityScreen(
   onDeleteTransaction: (TransactionEntity) -> Unit,
   onAddTransaction: () -> Unit,
   onExportData: () -> Unit = {},
+  scrollToTopSignal: Int = 0,
+  onRegisterSpotlightBounds: (SpotlightTargetId, Rect) -> Unit = { _, _ -> },
   modifier: Modifier = Modifier,
 ) {
+  val listState = rememberLazyListState()
+  LaunchedEffect(scrollToTopSignal) {
+    if (scrollToTopSignal > 0) {
+      listState.scrollToItem(0)
+    }
+  }
   var showSortMenu by remember { mutableStateOf(false) }
   var pendingDeleteTx by remember { mutableStateOf<TransactionEntity?>(null) }
   val isAppLocked = LocalIsAppLocked.current
@@ -155,6 +168,7 @@ fun ActivityScreen(
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
+      state = listState,
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
@@ -290,63 +304,74 @@ fun ActivityScreen(
         }
       }
 
+      // Search bar + Type filter controls (spotlighted together for Tour Step 3)
       item {
-        OutlinedTextField(
-          value = filter.searchQuery,
-          onValueChange = onSearchQueryChange,
-          placeholder = {
-            Text(
-              text = "Search transactions...",
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          },
-          leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-          trailingIcon = {
-            if (filter.searchQuery.isNotEmpty()) {
-              IconButton(onClick = { onSearchQueryChange("") }) {
-                Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coords ->
+              if (coords.isAttached) {
+                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                  onRegisterSpotlightBounds(SpotlightTargetId.ACTIVITY_CONTROLS, rect)
+                }
               }
-            }
-          },
-          singleLine = true,
-          modifier = Modifier
-            .fillMaxWidth()
-            .testTag("activity_search_input"),
-        )
-      }
-
-      // Type filter chips (date scope is controlled cleanly by the segmented toggle above)
-      item {
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
+            },
+          verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          FilterChip(
-            selected = filter.typeFilter == null,
-            onClick = { onTypeFilterChange(null) },
-            label = { Text("All types") },
-          )
-          FilterChip(
-            selected = filter.typeFilter == TransactionType.INCOME,
-            onClick = {
-              onTypeFilterChange(
-                if (filter.typeFilter == TransactionType.INCOME) null else TransactionType.INCOME
+          OutlinedTextField(
+            value = filter.searchQuery,
+            onValueChange = onSearchQueryChange,
+            placeholder = {
+              Text(
+                text = "Search transactions...",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
               )
             },
-            label = { Text("Income") },
-          )
-          FilterChip(
-            selected = filter.typeFilter == TransactionType.EXPENSE,
-            onClick = {
-              onTypeFilterChange(
-                if (filter.typeFilter == TransactionType.EXPENSE) null else TransactionType.EXPENSE
-              )
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+            trailingIcon = {
+              if (filter.searchQuery.isNotEmpty()) {
+                IconButton(onClick = { onSearchQueryChange("") }) {
+                  Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
+                }
+              }
             },
-            label = { Text("Expenses") },
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("activity_search_input"),
           )
+
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            FilterChip(
+              selected = filter.typeFilter == null,
+              onClick = { onTypeFilterChange(null) },
+              label = { Text("All types") },
+            )
+            FilterChip(
+              selected = filter.typeFilter == TransactionType.INCOME,
+              onClick = {
+                onTypeFilterChange(
+                  if (filter.typeFilter == TransactionType.INCOME) null else TransactionType.INCOME
+                )
+              },
+              label = { Text("Income") },
+            )
+            FilterChip(
+              selected = filter.typeFilter == TransactionType.EXPENSE,
+              onClick = {
+                onTypeFilterChange(
+                  if (filter.typeFilter == TransactionType.EXPENSE) null else TransactionType.EXPENSE
+                )
+              },
+              label = { Text("Expenses") },
+            )
+          }
         }
       }
 

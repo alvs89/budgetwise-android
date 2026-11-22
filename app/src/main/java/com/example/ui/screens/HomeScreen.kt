@@ -218,13 +218,6 @@ fun HomeScreen(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
-                modifier = Modifier.onGloballyPositioned { coords ->
-                  if (coords.isAttached) {
-                    runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                      onRegisterSpotlightBounds(SpotlightTargetId.FAB_AI_ASSISTANT, rect)
-                    }
-                  }
-                },
               ) {
                 IconButton(
                   onClick = onOpenAssistant,
@@ -390,26 +383,31 @@ fun HomeScreen(
         }
       }
 
-      // Hero Net Cash Flow Card
+      // Hero Net Cash Flow Card + Income & Expense Summary Cards (unified spotlight block for Step 1)
       item {
-        Surface(
-          shape = MaterialTheme.shapes.large,
+        Column(
           modifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned { coords ->
               if (coords.isAttached) {
                 runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
-                  onRegisterSpotlightBounds(SpotlightTargetId.NET_CASH_FLOW_CARD, rect)
+                  onRegisterSpotlightBounds(SpotlightTargetId.HOME_OVERVIEW, rect)
                 }
               }
-            }
-            .staggeredEntrance(
-              revealed = dashboardRevealed,
-              alreadyPlayed = hasPlayedEntrance,
-              delayMillis = 0L,
-            ),
-          shadowElevation = 2.dp,
+            },
+          verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+          Surface(
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier
+              .fillMaxWidth()
+              .staggeredEntrance(
+                revealed = dashboardRevealed,
+                alreadyPlayed = hasPlayedEntrance,
+                delayMillis = 0L,
+              ),
+            shadowElevation = 2.dp,
+          ) {
           Box(
             modifier = Modifier
               .fillMaxWidth()
@@ -495,10 +493,8 @@ fun HomeScreen(
             }
           }
         }
-      }
 
-      // Side-by-side Equal-Height Income & Expense Summary Cards
-      item {
+        // Side-by-side Equal-Height Income & Expense Summary Cards
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -603,6 +599,7 @@ fun HomeScreen(
                 .testTag("home_expenses_total"),
             )
           }
+        }
         }
       }
 

@@ -37,9 +37,11 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoGraph
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Explore
-import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.PieChart
+import androidx.compose.material.icons.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -80,78 +82,114 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import kotlin.math.roundToInt
 
+enum class SpotlightTab {
+  HOME,
+  ACTIVITY,
+  BUDGETS,
+  GOALS,
+  INSIGHTS,
+}
+
 enum class SpotlightTargetId {
+  HOME_OVERVIEW,
   FAB_ADD_TRANSACTION,
-  FAB_AI_ASSISTANT,
-  NET_CASH_FLOW_CARD,
+  ACTIVITY_CONTROLS,
+  BUDGETS_OVERVIEW,
+  GOALS_OVERVIEW,
+  INSIGHTS_OVERVIEW,
   TOP_ACTION_BAR,
-  BOTTOM_NAV_BAR,
 }
 
 data class SpotlightTourStep(
+  val tab: SpotlightTab,
   val targetId: SpotlightTargetId,
   val titleRes: Int,
   val bodyRes: Int,
   val icon: ImageVector,
   val highlightPaddingDp: Float = 8f,
-  val cornerRadiusDp: Float = 18f,
+  val cornerRadiusDp: Float = 20f,
 )
 
 val BudgetWiseSpotlightSteps: List<SpotlightTourStep> = listOf(
   SpotlightTourStep(
-    targetId = SpotlightTargetId.FAB_ADD_TRANSACTION,
+    tab = SpotlightTab.HOME,
+    targetId = SpotlightTargetId.HOME_OVERVIEW,
     titleRes = R.string.spotlight_step1_title,
     bodyRes = R.string.spotlight_step1_body,
-    icon = Icons.Rounded.Add,
-    highlightPaddingDp = 10f,
-    cornerRadiusDp = 22f,
-  ),
-  SpotlightTourStep(
-    targetId = SpotlightTargetId.FAB_AI_ASSISTANT,
-    titleRes = R.string.spotlight_step2_title,
-    bodyRes = R.string.spotlight_step2_body,
-    icon = Icons.Rounded.Forum,
-    highlightPaddingDp = 8f,
-    cornerRadiusDp = 24f,
-  ),
-  SpotlightTourStep(
-    targetId = SpotlightTargetId.NET_CASH_FLOW_CARD,
-    titleRes = R.string.spotlight_step3_title,
-    bodyRes = R.string.spotlight_step3_body,
     icon = Icons.Rounded.AccountBalanceWallet,
     highlightPaddingDp = 6f,
     cornerRadiusDp = 22f,
   ),
   SpotlightTourStep(
-    targetId = SpotlightTargetId.TOP_ACTION_BAR,
+    tab = SpotlightTab.HOME,
+    targetId = SpotlightTargetId.FAB_ADD_TRANSACTION,
+    titleRes = R.string.spotlight_step2_title,
+    bodyRes = R.string.spotlight_step2_body,
+    icon = Icons.Rounded.Add,
+    highlightPaddingDp = 10f,
+    cornerRadiusDp = 22f,
+  ),
+  SpotlightTourStep(
+    tab = SpotlightTab.ACTIVITY,
+    targetId = SpotlightTargetId.ACTIVITY_CONTROLS,
+    titleRes = R.string.spotlight_step3_title,
+    bodyRes = R.string.spotlight_step3_body,
+    icon = Icons.Rounded.ReceiptLong,
+    highlightPaddingDp = 8f,
+    cornerRadiusDp = 18f,
+  ),
+  SpotlightTourStep(
+    tab = SpotlightTab.BUDGETS,
+    targetId = SpotlightTargetId.BUDGETS_OVERVIEW,
     titleRes = R.string.spotlight_step4_title,
     bodyRes = R.string.spotlight_step4_body,
+    icon = Icons.Rounded.PieChart,
+    highlightPaddingDp = 6f,
+    cornerRadiusDp = 22f,
+  ),
+  SpotlightTourStep(
+    tab = SpotlightTab.GOALS,
+    targetId = SpotlightTargetId.GOALS_OVERVIEW,
+    titleRes = R.string.spotlight_step5_title,
+    bodyRes = R.string.spotlight_step5_body,
+    icon = Icons.Rounded.Savings,
+    highlightPaddingDp = 6f,
+    cornerRadiusDp = 22f,
+  ),
+  SpotlightTourStep(
+    tab = SpotlightTab.INSIGHTS,
+    targetId = SpotlightTargetId.INSIGHTS_OVERVIEW,
+    titleRes = R.string.spotlight_step6_title,
+    bodyRes = R.string.spotlight_step6_body,
+    icon = Icons.Rounded.AutoGraph,
+    highlightPaddingDp = 6f,
+    cornerRadiusDp = 20f,
+  ),
+  SpotlightTourStep(
+    tab = SpotlightTab.HOME,
+    targetId = SpotlightTargetId.TOP_ACTION_BAR,
+    titleRes = R.string.spotlight_step7_title,
+    bodyRes = R.string.spotlight_step7_body,
     icon = Icons.Rounded.Tune,
     highlightPaddingDp = 8f,
     cornerRadiusDp = 24f,
   ),
-  SpotlightTourStep(
-    targetId = SpotlightTargetId.BOTTOM_NAV_BAR,
-    titleRes = R.string.spotlight_step5_title,
-    bodyRes = R.string.spotlight_step5_body,
-    icon = Icons.Rounded.Explore,
-    highlightPaddingDp = 4f,
-    cornerRadiusDp = 16f,
-  ),
 )
 
 /**
- * Interactive real-time Spotlight Tour (Coach Marks) overlay rendered directly over the live Home
- * dashboard.
+ * Interactive 7-step tab-synchronized Spotlight Tour (Coach Marks) overlay rendered directly over
+ * the live BudgetWise screens.
  *
- * Uses measured root-space target bounds and measured tooltip height (`onSizeChanged`) to anchor
- * the compact tooltip card strictly ABOVE lower-half targets (`+` FAB, AI FAB, Bottom Nav Bar)
- * and strictly BELOW upper-half targets (Top Action Bar, Net Cash Flow Card) with zero overlap.
+ * Waits until the destination tab is active and its target bounds are attached and non-empty before
+ * drawing the spotlight cutout, preventing stale-coordinate flashes during cross-tab transitions.
+ * Clamps both cutouts and tooltips safely between system status and navigation bars, and anchors
+ * the compact tooltip card collision-free relative to the highlighted target.
  */
 @Composable
 fun SpotlightTourOverlay(
   visible: Boolean,
   currentStepIndex: Int,
+  isTargetTabActive: Boolean,
   targetBounds: Map<SpotlightTargetId, Rect>,
   onNext: () -> Unit,
   onBack: () -> Unit,
@@ -190,37 +228,44 @@ fun SpotlightTourOverlay(
       modifier = Modifier
         .fillMaxSize()
         .pointerInput(Unit) {
-          detectTapGestures { /* Consume background taps while tour is active */ }
+          detectTapGestures { /* Intercept background taps while tour is active */ }
         }
         .testTag("spotlight_tour_overlay"),
     ) {
       val containerWidthPx = with(density) { maxWidth.toPx() }.takeIf { it.isFinite() && it > 0f } ?: 0f
       val containerHeightPx = with(density) { maxHeight.toPx() }.takeIf { it.isFinite() && it > 0f } ?: 0f
       val hasContainerBounds = containerWidthPx > 0f && containerHeightPx > 0f
-      val rawTargetRect = targetBounds[step.targetId]
+      val rawTargetRect = if (isTargetTabActive) targetBounds[step.targetId] else null
       val padPx = with(density) { step.highlightPaddingDp.dp.toPx() }
       val cornerPx = with(density) { step.cornerRadiusDp.dp.toPx() }
 
-      val paddedRect = remember(rawTargetRect, padPx, containerWidthPx, containerHeightPx, navBarBottomPx, step.targetId) {
+      val safeCutoutTopPx = statusBarTopPx.coerceIn(0f, containerHeightPx)
+      val safeCutoutBottomPx = (containerHeightPx - navBarBottomPx).coerceIn(safeCutoutTopPx, containerHeightPx)
+
+      val paddedRect = remember(
+        rawTargetRect,
+        padPx,
+        containerWidthPx,
+        containerHeightPx,
+        safeCutoutTopPx,
+        safeCutoutBottomPx,
+      ) {
         if (!hasContainerBounds) {
           null
         } else {
           rawTargetRect
             ?.takeIf { r ->
-              r.left.isFinite() && r.top.isFinite() && r.right.isFinite() && r.bottom.isFinite()
+              !r.isEmpty &&
+                r.left.isFinite() &&
+                r.top.isFinite() &&
+                r.right.isFinite() &&
+                r.bottom.isFinite()
             }
             ?.let { r ->
-              val isHorizontalBottomNav = step.targetId == SpotlightTargetId.BOTTOM_NAV_BAR &&
-                r.width > r.height
-              val navBarCutBottom = (containerHeightPx - navBarBottomPx).coerceIn(0f, containerHeightPx)
               val left = (r.left - padPx).coerceIn(0f, containerWidthPx)
-              val top = (r.top - padPx).coerceIn(0f, containerHeightPx)
+              val top = (r.top - padPx).coerceIn(safeCutoutTopPx, safeCutoutBottomPx)
               val right = (r.right + padPx).coerceIn(left, containerWidthPx)
-              val bottom = if (isHorizontalBottomNav && navBarBottomPx > 0f) {
-                r.bottom.coerceAtMost(navBarCutBottom).coerceIn(top, navBarCutBottom)
-              } else {
-                (r.bottom + padPx).coerceIn(top, containerHeightPx)
-              }
+              val bottom = (r.bottom + padPx).coerceIn(top, safeCutoutBottomPx)
               Rect(left = left, top = top, right = right, bottom = bottom)
             }
         }
@@ -228,26 +273,11 @@ fun SpotlightTourOverlay(
 
       val hasValidTarget = paddedRect != null && paddedRect.width > 4f && paddedRect.height > 4f
 
-      val animSpec = tween<Float>(durationMillis = 260, easing = FastOutSlowInEasing)
-      val animLeft by animateFloatAsState(
-        targetValue = paddedRect?.left ?: (containerWidthPx * 0.5f),
-        animationSpec = animSpec,
-        label = "spotlight_left",
-      )
-      val animTop by animateFloatAsState(
-        targetValue = paddedRect?.top ?: (containerHeightPx * 0.5f),
-        animationSpec = animSpec,
-        label = "spotlight_top",
-      )
-      val animRight by animateFloatAsState(
-        targetValue = paddedRect?.right ?: (containerWidthPx * 0.5f),
-        animationSpec = animSpec,
-        label = "spotlight_right",
-      )
-      val animBottom by animateFloatAsState(
-        targetValue = paddedRect?.bottom ?: (containerHeightPx * 0.5f),
-        animationSpec = animSpec,
-        label = "spotlight_bottom",
+      // Smoothly fade the cutout in once the destination tab's target rect is attached
+      val cutoutAlpha by animateFloatAsState(
+        targetValue = if (hasValidTarget) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "spotlight_cutout_alpha",
       )
 
       Canvas(
@@ -257,28 +287,23 @@ fun SpotlightTourOverlay(
       ) {
         drawRect(color = Color.Black.copy(alpha = 0.74f))
 
-        if (
-          hasValidTarget &&
-          animLeft.isFinite() &&
-          animTop.isFinite() &&
-          animRight.isFinite() &&
-          animBottom.isFinite()
-        ) {
-          val cutoutWidth = (animRight - animLeft).coerceAtLeast(1f)
-          val cutoutHeight = (animBottom - animTop).coerceAtLeast(1f)
+        val rect = paddedRect
+        if (hasValidTarget && rect != null && cutoutAlpha > 0.01f) {
+          val cutoutWidth = (rect.right - rect.left).coerceAtLeast(1f)
+          val cutoutHeight = (rect.bottom - rect.top).coerceAtLeast(1f)
           val radius = CornerRadius(cornerPx, cornerPx)
 
           drawRoundRect(
             color = Color.Transparent,
-            topLeft = Offset(animLeft, animTop),
+            topLeft = Offset(rect.left, rect.top),
             size = Size(cutoutWidth, cutoutHeight),
             cornerRadius = radius,
             blendMode = BlendMode.Clear,
           )
 
           drawRoundRect(
-            color = highlightColor.copy(alpha = 0.92f),
-            topLeft = Offset(animLeft, animTop),
+            color = highlightColor.copy(alpha = 0.92f * cutoutAlpha),
+            topLeft = Offset(rect.left, rect.top),
             size = Size(cutoutWidth, cutoutHeight),
             cornerRadius = radius,
             style = Stroke(width = 2.5.dp.toPx()),
@@ -286,7 +311,7 @@ fun SpotlightTourOverlay(
         }
       }
 
-      // Collision-free root-coordinate placement using real measured tooltip height
+      // Collision-free root-coordinate tooltip placement using measured tooltip height
       val screenMidY = containerHeightPx / 2f
       val gapPx = with(density) { 16.dp.toPx() }
       val safeMarginPx = with(density) { 16.dp.toPx() }
@@ -300,14 +325,23 @@ fun SpotlightTourOverlay(
       val maxBottomAnchoredTopPx = (safeBottomPx - effectiveTooltipHeightPx).coerceAtLeast(safeTopPx)
 
       val targetCenterY = paddedRect?.center?.y ?: screenMidY
-      val placeCardAbove = hasValidTarget && targetCenterY >= screenMidY
+      val spaceAbove = if (paddedRect != null) paddedRect.top - gapPx - safeTopPx else 0f
+      val spaceBelow = if (paddedRect != null) safeBottomPx - (paddedRect.bottom + gapPx) else 0f
+      val placeCardAbove = hasValidTarget && when {
+        // Lower-half targets (e.g., Step 2 + FAB) always anchor strictly above
+        targetCenterY >= screenMidY -> true
+        // Upper-half targets anchor strictly below whenever space permits; fallback above only if cramped
+        spaceBelow >= effectiveTooltipHeightPx -> false
+        spaceAbove > spaceBelow -> true
+        else -> false
+      }
 
       val rawDesiredTopPx = when {
         !hasContainerBounds -> safeTopPx
         !hasValidTarget -> ((safeTopPx + safeBottomPx - effectiveTooltipHeightPx) * 0.5f)
           .coerceIn(safeTopPx, maxBottomAnchoredTopPx)
         placeCardAbove -> (paddedRect!!.top - gapPx - effectiveTooltipHeightPx)
-          .coerceAtLeast(safeTopPx)
+          .coerceIn(safeTopPx, maxBottomAnchoredTopPx)
         else -> (paddedRect!!.bottom + gapPx)
           .coerceIn(safeTopPx, maxBottomAnchoredTopPx)
       }
@@ -326,8 +360,8 @@ fun SpotlightTourOverlay(
         modifier = Modifier
           .fillMaxWidth()
           .offset { IntOffset(x = 0, y = desiredTopIntPx) }
-          .padding(horizontal = 20.dp)
-          .alpha(if (measuredTooltipHeightPx > 0) 1f else 0f),
+          .padding(horizontal = 16.dp)
+          .alpha(if (measuredTooltipHeightPx > 0 && hasValidTarget) 1f else 0f),
         contentAlignment = Alignment.TopCenter,
       ) {
         Surface(
@@ -351,7 +385,7 @@ fun SpotlightTourOverlay(
               .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            // Header row: step counter pill + Skip button
+            // Top row: step badge ("1 of 7") on left, Skip on right (hidden on final step)
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -392,7 +426,7 @@ fun SpotlightTourOverlay(
               }
             }
 
-            // Compact Icon + Title + crisp 2-line copy
+            // Icon + Title + concise body copy
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -437,22 +471,22 @@ fun SpotlightTourOverlay(
               }
             }
 
-            // Progress dots + Back / Next (or Done) action buttons
+            // Bottom row: compact 7-dot progress indicator + Back / Next (or Done) controls
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 repeat(totalSteps) { index ->
                   val active = index == safeIndex
                   Box(
                     modifier = Modifier
-                      .width(if (active) 20.dp else 7.dp)
-                      .height(7.dp)
+                      .width(if (active) 16.dp else 6.dp)
+                      .height(6.dp)
                       .clip(CircleShape)
                       .background(
                         if (active) {
@@ -474,9 +508,9 @@ fun SpotlightTourOverlay(
                     onClick = onBack,
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     modifier = Modifier
-                      .heightIn(min = 42.dp)
+                      .heightIn(min = 40.dp)
                       .testTag("spotlight_back_button"),
                   ) {
                     Icon(
@@ -488,6 +522,8 @@ fun SpotlightTourOverlay(
                     Text(
                       text = stringResource(R.string.welcome_back),
                       style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                      maxLines = 1,
+                      softWrap = false,
                     )
                   }
                 }
@@ -499,9 +535,9 @@ fun SpotlightTourOverlay(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                   ),
-                  contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                   modifier = Modifier
-                    .heightIn(min = 42.dp)
+                    .heightIn(min = 40.dp)
                     .testTag(if (isLastStep) "spotlight_done_button" else "spotlight_next_button"),
                 ) {
                   Text(
@@ -509,6 +545,8 @@ fun SpotlightTourOverlay(
                       if (isLastStep) R.string.welcome_done else R.string.welcome_next
                     ),
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                    softWrap = false,
                   )
                   Spacer(modifier = Modifier.width(4.dp))
                   Icon(

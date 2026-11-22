@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoGraph
@@ -35,9 +36,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,6 +58,7 @@ import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.MonthSelectorBar
 import com.example.ui.components.MonthlyIncomeExpenseChart
 import com.example.ui.components.SpendingTrendLineChart
+import com.example.ui.components.SpotlightTargetId
 import com.example.ui.theme.LocalFinanceColors
 import com.example.ui.viewmodel.BudgetWiseUiState
 import java.math.BigDecimal
@@ -63,8 +69,16 @@ fun InsightsScreen(
   onPreviousMonth: () -> Unit,
   onNextMonth: () -> Unit,
   onOpenAssistant: () -> Unit = {},
+  scrollToTopSignal: Int = 0,
+  onRegisterSpotlightBounds: (SpotlightTargetId, Rect) -> Unit = { _, _ -> },
   modifier: Modifier = Modifier,
 ) {
+  val listState = rememberLazyListState()
+  LaunchedEffect(scrollToTopSignal) {
+    if (scrollToTopSignal > 0) {
+      listState.scrollToItem(0)
+    }
+  }
   val currency = uiState.preferences.preferredCurrency
   val isBalanceHidden = LocalIsBalanceHidden.current
   val financeColors = LocalFinanceColors.current
@@ -89,6 +103,7 @@ fun InsightsScreen(
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
+      state = listState,
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
@@ -135,16 +150,7 @@ fun InsightsScreen(
         }
       }
 
-      item {
-        MonthSelectorBar(
-          selectedMonth = uiState.selectedMonth,
-          onPreviousMonth = onPreviousMonth,
-          onNextMonth = onNextMonth,
-          modifier = Modifier.fillMaxWidth(),
-        )
-      }
-
-      // Equal-height symmetrical Monthly KPI Grid (immediately visible above the fold)
+      // Monthly Breakdown + Symmetrical KPI Grid (spotlighted together for Tour Step 6)
       item {
         val isMonthlyDeficit = uiState.netCashFlow < BigDecimal.ZERO
         val savingsSubtext = when {
@@ -189,6 +195,25 @@ fun InsightsScreen(
             "$overFormatted over limit"
           }
         }
+
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coords ->
+              if (coords.isAttached) {
+                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                  onRegisterSpotlightBounds(SpotlightTargetId.INSIGHTS_OVERVIEW, rect)
+                }
+              }
+            },
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          MonthSelectorBar(
+            selectedMonth = uiState.selectedMonth,
+            onPreviousMonth = onPreviousMonth,
+            onNextMonth = onNextMonth,
+            modifier = Modifier.fillMaxWidth(),
+          )
 
         Row(
           modifier = Modifier
@@ -271,6 +296,7 @@ fun InsightsScreen(
               minFontSize = 10.sp,
             )
           }
+        }
         }
       }
 

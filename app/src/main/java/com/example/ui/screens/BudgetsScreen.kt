@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -35,14 +36,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -65,6 +70,7 @@ import com.example.ui.components.FintechProgressBar
 import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.MonthSelectorBar
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.SpotlightTargetId
 import com.example.ui.components.StableFormDialog
 import com.example.ui.components.SwipeToRevealDeleteRow
 import com.example.ui.components.sortCategoriesOtherLast
@@ -80,8 +86,16 @@ fun BudgetsScreen(
   onSaveBudget: (existingId: Long, category: String, limitCentavos: Long, yearMonth: YearMonthKey) -> Unit,
   onDeleteBudget: (BudgetSummary) -> Unit,
   onCopyPreviousMonthBudgets: () -> Unit = {},
+  scrollToTopSignal: Int = 0,
+  onRegisterSpotlightBounds: (SpotlightTargetId, Rect) -> Unit = { _, _ -> },
   modifier: Modifier = Modifier,
 ) {
+  val listState = rememberLazyListState()
+  LaunchedEffect(scrollToTopSignal) {
+    if (scrollToTopSignal > 0) {
+      listState.scrollToItem(0)
+    }
+  }
   var showEditor by remember { mutableStateOf(false) }
   var editingBudget by remember { mutableStateOf<BudgetSummary?>(null) }
   var pendingDeleteBudget by remember { mutableStateOf<BudgetSummary?>(null) }
@@ -138,6 +152,7 @@ fun BudgetsScreen(
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
+      state = listState,
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
@@ -216,7 +231,15 @@ fun BudgetsScreen(
         Surface(
           shape = MaterialTheme.shapes.large,
           shadowElevation = 2.dp,
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coords ->
+              if (coords.isAttached) {
+                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                  onRegisterSpotlightBounds(SpotlightTargetId.BUDGETS_OVERVIEW, rect)
+                }
+              }
+            },
         ) {
           Box(
             modifier = Modifier
@@ -334,6 +357,13 @@ fun BudgetsScreen(
             },
             secondaryActionIcon = if (previousMonthBudgetCount > 0) Icons.Rounded.ContentCopy else null,
             onSecondaryAction = if (previousMonthBudgetCount > 0) onCopyPreviousMonthBudgets else null,
+            modifier = Modifier.onGloballyPositioned { coords ->
+              if (coords.isAttached) {
+                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                  onRegisterSpotlightBounds(SpotlightTargetId.BUDGETS_OVERVIEW, rect)
+                }
+              }
+            },
           )
         }
       } else {
