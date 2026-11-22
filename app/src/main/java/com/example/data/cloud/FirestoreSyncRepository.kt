@@ -1,5 +1,6 @@
 package com.example.data.cloud
 
+import android.content.Context
 import com.example.data.local.SampleDataSeeder
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
@@ -8,21 +9,25 @@ import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.domain.CurrencyOption
 import com.example.domain.GoalStatus
-import com.example.domain.YearMonthKey
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.snapshots
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.MetadataChanges
+import com.google.firebase.firestore.Source
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
@@ -30,13 +35,15 @@ import kotlinx.coroutines.tasks.await
 /**
  * Cloud-backed Firestore repository scoped to a single authenticated [userId].
  *
- * All synced financial records live under `/users/{userId}/...` in BudgetWise's named Firestore
- * database. Offline persistence is handled natively by the Firestore SDK, and every snapshot read
- * uses [DocumentSnapshot.ServerTimestampBehavior.ESTIMATE] for smooth optimistic UI updates.
+ * Uses [MetadataChanges.INCLUDE] on snapshot listeners combined with Android's
+ * [NetworkConnectivityObserver] and an active server handshake probe so the UI never gets stuck
+ * reporting "Offline" after sign-out / re-sign-in while online. All active [ListenerRegistration]s
+ * are tracked and detached cleanly on [detachAllListeners] during sign-out.
  */
 class FirestoreSyncRepository(
   private val db: FirebaseFirestore,
   private val userId: String,
+  appContext: Context? = null,
 ) {
   private val userDocRef: DocumentReference = db.collection("users").document(userId)
   private val transactionsCol = userDocRef.collection("transactions")
@@ -46,171 +53,432 @@ class FirestoreSyncRepository(
   private val categoriesCol = userDocRef.collection("categories")
 
   private val initMutex = Mutex()
+  private val activeListeners = CopyOnWriteArrayList<ListenerRegistration>()
 
   private val txIdToDoc = ConcurrentHashMap<Long, String>()
   private val budgetIdToDoc = ConcurrentHashMap<Long, String>()
   private val goalIdToDoc = ConcurrentHashMap<Long, String>()
   private val categoryIdToDoc = ConcurrentHashMap<Long, String>()
 
-  private val _syncStatus = MutableStateFlow(CloudSyncStatus.SYNCING)
-  val syncStatus: StateFlow<CloudSyncStatus> = _syncStatus.asStateFlow()
+  private val isOnlineFlow: Flow<Boolean> = if (appContext != null) {
+    NetworkConnectivityObserver.observeIsOnline(appContext)
+  } else {
+    flowOf(true)
+  }
+
+  private val _isProbingServer = MutableStateFlow(false)
+  private val _hasServerConfirmed = MutableStateFlow(false)
+  private val _hasPendingWrites = MutableStateFlow(false)
+  private val _hasSyncError = MutableStateFlow(false)
 
   private val _lastSyncError = MutableStateFlow<String?>(null)
   val lastSyncError: StateFlow<String?> = _lastSyncError.asStateFlow()
 
-  val profileState: Flow<CloudProfileState> = userDocRef.snapshots()
-    .map<DocumentSnapshot, CloudProfileState> { snapshot ->
-      updateSyncMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
-      if (!snapshot.exists()) {
-        CloudProfileState.Missing
-      } else {
-        val doc = snapshot.toObject(
-          UserProfileDoc::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
-        )
-        if (doc != null) {
-          CloudProfileState.Loaded(doc.toDomain())
-        } else {
-          CloudProfileState.Missing
-        }
-      }
-    }
-    .catch { error ->
-      if (error is CancellationException) throw error
-      FirestoreErrorHandler.logFirestoreError(error, OperationType.GET, "users/$userId")
-      _syncStatus.value = CloudSyncStatus.ERROR
-      _lastSyncError.value = error.localizedMessage ?: "Unable to sync profile."
-      emit(CloudProfileState.Error(error.localizedMessage ?: "Unable to sync profile."))
-    }
-
-  val transactions: Flow<List<TransactionEntity>> = transactionsCol.snapshots()
-    .map { snapshot ->
-      updateSyncMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
-      val mapped = snapshot.documents.mapNotNull { docSnap ->
-        val doc = docSnap.toObject(
-          TransactionDoc::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
-        ) ?: return@mapNotNull null
-        val stableId = stablePositiveLongId(docSnap.id)
-        txIdToDoc[stableId] = docSnap.id
-        doc.toEntity(stableId)
-      }
-      mapped.sortedWith(
-        compareByDescending<TransactionEntity> { it.dateEpochDay }
-          .thenByDescending { it.createdAtMillis }
-      )
-    }
-    .catch { error ->
-      if (error is CancellationException) throw error
-      FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/transactions")
-      _syncStatus.value = CloudSyncStatus.ERROR
-      _lastSyncError.value = "Could not load synced transactions."
-      emit(emptyList())
-    }
-
-  val budgets: Flow<List<BudgetEntity>> = budgetsCol.snapshots()
-    .map { snapshot ->
-      updateSyncMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
-      val mapped = snapshot.documents.mapNotNull { docSnap ->
-        val doc = docSnap.toObject(
-          BudgetDoc::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
-        ) ?: return@mapNotNull null
-        val stableId = stablePositiveLongId(docSnap.id)
-        budgetIdToDoc[stableId] = docSnap.id
-        doc.toEntity(stableId)
-      }
-      mapped.sortedWith(
-        compareByDescending<BudgetEntity> { it.year }
-          .thenByDescending { it.month }
-          .thenBy { it.category.lowercase(Locale.US) }
-      )
-    }
-    .catch { error ->
-      if (error is CancellationException) throw error
-      FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/budgets")
-      _syncStatus.value = CloudSyncStatus.ERROR
-      emit(emptyList())
-    }
-
-  val savingsGoals: Flow<List<SavingsGoalEntity>> = goalsCol.snapshots()
-    .map { snapshot ->
-      updateSyncMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
-      val mapped = snapshot.documents.mapNotNull { docSnap ->
-        val doc = docSnap.toObject(
-          SavingsGoalDoc::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
-        ) ?: return@mapNotNull null
-        val stableId = stablePositiveLongId(docSnap.id)
-        goalIdToDoc[stableId] = docSnap.id
-        doc.toEntity(stableId)
-      }
-      mapped.sortedWith(
-        compareByDescending<SavingsGoalEntity> { it.createdDateEpochDay }
-          .thenByDescending { it.id }
-      )
-    }
-    .catch { error ->
-      if (error is CancellationException) throw error
-      FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/goals")
-      _syncStatus.value = CloudSyncStatus.ERROR
-      emit(emptyList())
-    }
-
-  val savingsContributions: Flow<List<SavingsContributionEntity>> = contributionsCol.snapshots()
-    .map { snapshot ->
-      updateSyncMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
-      val mapped = snapshot.documents.mapNotNull { docSnap ->
-        val doc = docSnap.toObject(
-          SavingsContributionDoc::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
-        ) ?: return@mapNotNull null
-        if (doc.goalDocId.isBlank()) return@mapNotNull null
-        val stableId = stablePositiveLongId(docSnap.id)
-        val stableGoalId = stablePositiveLongId(doc.goalDocId)
-        doc.toEntity(stableId = stableId, stableGoalId = stableGoalId)
-      }
-      mapped.sortedWith(
-        compareByDescending<SavingsContributionEntity> { it.dateEpochDay }
-          .thenByDescending { it.createdAtMillis }
-      )
-    }
-    .catch { error ->
-      if (error is CancellationException) throw error
-      FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/contributions")
-      _syncStatus.value = CloudSyncStatus.ERROR
-      emit(emptyList())
-    }
-
-  val categories: Flow<List<CategoryEntity>> = categoriesCol.snapshots()
-    .map { snapshot ->
-      updateSyncMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
-      val mapped = snapshot.documents.mapNotNull { docSnap ->
-        val doc = docSnap.toObject(
-          CategoryDoc::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
-        ) ?: return@mapNotNull null
-        val stableId = stablePositiveLongId(docSnap.id)
-        categoryIdToDoc[stableId] = docSnap.id
-        doc.toEntity(stableId)
-      }
-      mapped.sortedWith(categoryComparator())
-    }
-    .catch { error ->
-      if (error is CancellationException) throw error
-      FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/categories")
-      _syncStatus.value = CloudSyncStatus.ERROR
-      emit(emptyList())
-    }
-
-  private fun updateSyncMetadata(isFromCache: Boolean, hasPendingWrites: Boolean) {
-    _syncStatus.value = when {
-      hasPendingWrites -> CloudSyncStatus.SYNCING
-      isFromCache -> CloudSyncStatus.OFFLINE
+  val syncStatus: Flow<CloudSyncStatus> = combine(
+    isOnlineFlow,
+    _isProbingServer,
+    _hasServerConfirmed,
+    _hasPendingWrites,
+    _hasSyncError,
+  ) { isOnline, isProbing, serverConfirmed, hasPendingWrites, hasSyncError ->
+    when {
+      !isOnline -> CloudSyncStatus.OFFLINE
+      hasSyncError && !isProbing -> CloudSyncStatus.ERROR
+      isProbing || hasPendingWrites || !serverConfirmed -> CloudSyncStatus.SYNCING
       else -> CloudSyncStatus.SYNCED
     }
-    if (!isFromCache && !hasPendingWrites) {
+  }
+
+  val profileState: Flow<CloudProfileState> = callbackFlow {
+    trySend(CloudProfileState.Loading)
+    val registration = runCatching {
+      userDocRef.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        if (error != null) {
+          FirestoreErrorHandler.logFirestoreError(error, OperationType.GET, "users/$userId")
+          _hasSyncError.value = true
+          _lastSyncError.value = error.localizedMessage ?: "Unable to sync profile."
+          trySend(CloudProfileState.Error(error.localizedMessage ?: "Unable to sync profile."))
+          return@addSnapshotListener
+        }
+        if (snapshot == null) return@addSnapshotListener
+        runCatching {
+          recordSnapshotMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
+          if (!snapshot.exists()) {
+            trySend(CloudProfileState.Missing)
+          } else {
+            val profile = parseUserProfileSafely(snapshot)
+            if (profile != null) {
+              trySend(CloudProfileState.Loaded(profile))
+            } else {
+              trySend(CloudProfileState.Missing)
+            }
+          }
+        }.onFailure { err ->
+          FirestoreErrorHandler.logFirestoreError(err, OperationType.GET, "users/$userId")
+          trySend(CloudProfileState.Error("Unable to read synced profile."))
+        }
+      }
+    }.onFailure { err ->
+      FirestoreErrorHandler.logFirestoreError(err, OperationType.GET, "users/$userId")
+      trySend(CloudProfileState.Error(err.localizedMessage ?: "Unable to connect to cloud profile."))
+    }.getOrNull()
+
+    if (registration != null) activeListeners.add(registration)
+    awaitClose {
+      if (registration != null) {
+        activeListeners.remove(registration)
+        runCatching { registration.remove() }
+      }
+    }
+  }
+
+  val transactions: Flow<List<TransactionEntity>> = callbackFlow {
+    val registration = runCatching {
+      transactionsCol.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        if (error != null) {
+          FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/transactions")
+          _hasSyncError.value = true
+          _lastSyncError.value = "Could not load synced transactions."
+          trySend(emptyList())
+          return@addSnapshotListener
+        }
+        if (snapshot == null) return@addSnapshotListener
+        runCatching {
+          recordSnapshotMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
+          val mapped = snapshot.documents.mapNotNull { docSnap ->
+            runCatching {
+              val doc = docSnap.toObject(
+                TransactionDoc::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+              ) ?: return@runCatching null
+              val stableId = stablePositiveLongId(docSnap.id)
+              txIdToDoc[stableId] = docSnap.id
+              doc.toEntity(stableId)
+            }.onFailure { err ->
+              FirestoreErrorHandler.logFirestoreError(
+                err,
+                OperationType.GET,
+                "users/$userId/transactions/${docSnap.id}",
+              )
+            }.getOrNull()
+          }.sortedWith(
+            compareByDescending<TransactionEntity> { it.dateEpochDay }
+              .thenByDescending { it.createdAtMillis }
+          )
+          trySend(mapped)
+        }.onFailure { err ->
+          FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/transactions")
+          trySend(emptyList())
+        }
+      }
+    }.onFailure { err ->
+      FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/transactions")
+      trySend(emptyList())
+    }.getOrNull()
+
+    if (registration != null) activeListeners.add(registration)
+    awaitClose {
+      if (registration != null) {
+        activeListeners.remove(registration)
+        runCatching { registration.remove() }
+      }
+    }
+  }
+
+  val budgets: Flow<List<BudgetEntity>> = callbackFlow {
+    val registration = runCatching {
+      budgetsCol.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        if (error != null) {
+          FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/budgets")
+          _hasSyncError.value = true
+          trySend(emptyList())
+          return@addSnapshotListener
+        }
+        if (snapshot == null) return@addSnapshotListener
+        runCatching {
+          recordSnapshotMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
+          val mapped = snapshot.documents.mapNotNull { docSnap ->
+            runCatching {
+              val doc = docSnap.toObject(
+                BudgetDoc::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+              ) ?: return@runCatching null
+              val stableId = stablePositiveLongId(docSnap.id)
+              budgetIdToDoc[stableId] = docSnap.id
+              doc.toEntity(stableId)
+            }.onFailure { err ->
+              FirestoreErrorHandler.logFirestoreError(
+                err,
+                OperationType.GET,
+                "users/$userId/budgets/${docSnap.id}",
+              )
+            }.getOrNull()
+          }.sortedWith(
+            compareByDescending<BudgetEntity> { it.year }
+              .thenByDescending { it.month }
+              .thenBy { it.category.lowercase(Locale.US) }
+          )
+          trySend(mapped)
+        }.onFailure { err ->
+          FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/budgets")
+          trySend(emptyList())
+        }
+      }
+    }.onFailure { err ->
+      FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/budgets")
+      trySend(emptyList())
+    }.getOrNull()
+
+    if (registration != null) activeListeners.add(registration)
+    awaitClose {
+      if (registration != null) {
+        activeListeners.remove(registration)
+        runCatching { registration.remove() }
+      }
+    }
+  }
+
+  val savingsGoals: Flow<List<SavingsGoalEntity>> = callbackFlow {
+    val registration = runCatching {
+      goalsCol.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        if (error != null) {
+          FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/goals")
+          _hasSyncError.value = true
+          trySend(emptyList())
+          return@addSnapshotListener
+        }
+        if (snapshot == null) return@addSnapshotListener
+        runCatching {
+          recordSnapshotMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
+          val mapped = snapshot.documents.mapNotNull { docSnap ->
+            runCatching {
+              val doc = docSnap.toObject(
+                SavingsGoalDoc::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+              ) ?: return@runCatching null
+              val stableId = stablePositiveLongId(docSnap.id)
+              goalIdToDoc[stableId] = docSnap.id
+              doc.toEntity(stableId)
+            }.onFailure { err ->
+              FirestoreErrorHandler.logFirestoreError(
+                err,
+                OperationType.GET,
+                "users/$userId/goals/${docSnap.id}",
+              )
+            }.getOrNull()
+          }.sortedWith(
+            compareByDescending<SavingsGoalEntity> { it.createdDateEpochDay }
+              .thenByDescending { it.id }
+          )
+          trySend(mapped)
+        }.onFailure { err ->
+          FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/goals")
+          trySend(emptyList())
+        }
+      }
+    }.onFailure { err ->
+      FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/goals")
+      trySend(emptyList())
+    }.getOrNull()
+
+    if (registration != null) activeListeners.add(registration)
+    awaitClose {
+      if (registration != null) {
+        activeListeners.remove(registration)
+        runCatching { registration.remove() }
+      }
+    }
+  }
+
+  val savingsContributions: Flow<List<SavingsContributionEntity>> = callbackFlow {
+    val registration = runCatching {
+      contributionsCol.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        if (error != null) {
+          FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/contributions")
+          _hasSyncError.value = true
+          trySend(emptyList())
+          return@addSnapshotListener
+        }
+        if (snapshot == null) return@addSnapshotListener
+        runCatching {
+          recordSnapshotMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
+          val mapped = snapshot.documents.mapNotNull { docSnap ->
+            runCatching {
+              val doc = docSnap.toObject(
+                SavingsContributionDoc::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+              ) ?: return@runCatching null
+              if (doc.goalDocId.isBlank()) return@runCatching null
+              val stableId = stablePositiveLongId(docSnap.id)
+              val stableGoalId = stablePositiveLongId(doc.goalDocId)
+              doc.toEntity(stableId = stableId, stableGoalId = stableGoalId)
+            }.onFailure { err ->
+              FirestoreErrorHandler.logFirestoreError(
+                err,
+                OperationType.GET,
+                "users/$userId/contributions/${docSnap.id}",
+              )
+            }.getOrNull()
+          }.sortedWith(
+            compareByDescending<SavingsContributionEntity> { it.dateEpochDay }
+              .thenByDescending { it.createdAtMillis }
+          )
+          trySend(mapped)
+        }.onFailure { err ->
+          FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/contributions")
+          trySend(emptyList())
+        }
+      }
+    }.onFailure { err ->
+      FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/contributions")
+      trySend(emptyList())
+    }.getOrNull()
+
+    if (registration != null) activeListeners.add(registration)
+    awaitClose {
+      if (registration != null) {
+        activeListeners.remove(registration)
+        runCatching { registration.remove() }
+      }
+    }
+  }
+
+  val categories: Flow<List<CategoryEntity>> = callbackFlow {
+    val registration = runCatching {
+      categoriesCol.addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+        if (error != null) {
+          FirestoreErrorHandler.logFirestoreError(error, OperationType.LIST, "users/$userId/categories")
+          _hasSyncError.value = true
+          trySend(emptyList())
+          return@addSnapshotListener
+        }
+        if (snapshot == null) return@addSnapshotListener
+        runCatching {
+          recordSnapshotMetadata(snapshot.metadata.isFromCache, snapshot.metadata.hasPendingWrites())
+          val mapped = snapshot.documents.mapNotNull { docSnap ->
+            runCatching {
+              val doc = docSnap.toObject(
+                CategoryDoc::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+              ) ?: return@runCatching null
+              val stableId = stablePositiveLongId(docSnap.id)
+              categoryIdToDoc[stableId] = docSnap.id
+              doc.toEntity(stableId)
+            }.onFailure { err ->
+              FirestoreErrorHandler.logFirestoreError(
+                err,
+                OperationType.GET,
+                "users/$userId/categories/${docSnap.id}",
+              )
+            }.getOrNull()
+          }.sortedWith(categoryComparator())
+          trySend(mapped)
+        }.onFailure { err ->
+          FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/categories")
+          trySend(emptyList())
+        }
+      }
+    }.onFailure { err ->
+      FirestoreErrorHandler.logFirestoreError(err, OperationType.LIST, "users/$userId/categories")
+      trySend(emptyList())
+    }.getOrNull()
+
+    if (registration != null) activeListeners.add(registration)
+    awaitClose {
+      if (registration != null) {
+        activeListeners.remove(registration)
+        runCatching { registration.remove() }
+      }
+    }
+  }
+
+  private fun parseUserProfileSafely(snapshot: DocumentSnapshot): CloudUserProfile? {
+    val mapped = runCatching {
+      snapshot.toObject(
+        UserProfileDoc::class.java,
+        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
+      )?.toDomain()
+    }.getOrNull()
+    if (mapped != null) return mapped
+
+    // Fallback field-by-field reader so null or legacy fields never crash deserialization
+    return runCatching {
+      val resolvedUid = snapshot.getString("userId")?.takeIf { it.isNotBlank() }
+        ?: snapshot.id.ifBlank { userId }
+      val displayName = snapshot.getString("displayName")?.trim()?.takeIf { it.isNotBlank() } ?: "Alex"
+      val currency = CurrencyOption.fromCode(
+        snapshot.getString("preferredCurrency") ?: CurrencyOption.PHP.code
+      ).code
+      val onboardingCompleted = snapshot.getBoolean("onboardingCompleted") ?: false
+      val initializedData = snapshot.getBoolean("initializedData") ?: false
+      val photoUrl = snapshot.getString("photoUrl")?.trim().orEmpty()
+      val customPhotoBase64 = snapshot.getString("customPhotoBase64")?.trim().orEmpty()
+      CloudUserProfile(
+        userId = resolvedUid,
+        displayName = displayName,
+        preferredCurrency = currency,
+        onboardingCompleted = onboardingCompleted,
+        initializedData = initializedData,
+        photoUrl = photoUrl,
+        customPhotoBase64 = customPhotoBase64,
+      )
+    }.getOrNull()
+  }
+
+  private fun recordSnapshotMetadata(isFromCache: Boolean, hasPendingWrites: Boolean) {
+    _hasPendingWrites.value = hasPendingWrites
+    if (!isFromCache) {
+      _hasServerConfirmed.value = true
+      _hasSyncError.value = false
       _lastSyncError.value = null
+    }
+  }
+
+  /**
+   * Explicitly detaches all active Firestore snapshot listeners before sign-out so no stale
+   * listener survives into a subsequent session.
+   */
+  fun detachAllListeners() {
+    val snapshot = activeListeners.toList()
+    activeListeners.clear()
+    snapshot.forEach { reg -> runCatching { reg.remove() } }
+    _hasServerConfirmed.value = false
+    _hasPendingWrites.value = false
+    _isProbingServer.value = false
+    _hasSyncError.value = false
+  }
+
+  /**
+   * Actively probes the Firestore server (`Source.SERVER` with graceful fallback to `Source.DEFAULT`)
+   * and waits for pending writes to confirm live cloud sync status.
+   */
+  suspend fun verifyServerSync(): Result<Unit> {
+    _isProbingServer.value = true
+    _hasSyncError.value = false
+    return try {
+      runCatching { db.waitForPendingWrites().await() }
+      val serverSnap = userDocRef.get(Source.SERVER).await()
+      if (!serverSnap.metadata.isFromCache) {
+        _hasServerConfirmed.value = true
+        _hasPendingWrites.value = false
+        _hasSyncError.value = false
+        _lastSyncError.value = null
+      }
+      Result.success(Unit)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (serverErr: Exception) {
+      val fallbackSnap = runCatching { userDocRef.get(Source.DEFAULT).await() }.getOrNull()
+      if (fallbackSnap != null && !fallbackSnap.metadata.isFromCache) {
+        _hasServerConfirmed.value = true
+        _hasSyncError.value = false
+        Result.success(Unit)
+      } else {
+        FirestoreErrorHandler.logFirestoreError(serverErr, OperationType.GET, "users/$userId")
+        Result.failure(serverErr)
+      }
+    } finally {
+      _isProbingServer.value = false
     }
   }
 
@@ -224,98 +492,86 @@ class FirestoreSyncRepository(
   )
 
   /**
-   * Ensures `/users/{userId}` and default categories exist on first sign-in without overwriting
-   * an existing returning user's cloud profile or data.
+   * Initializes `/users/{userId}` and the 30 default categories on first sign-in with a clean
+   * `₱0.00` ledger (zero demo data). Never overwrites a custom display name or avatar saved by
+   * a returning user.
    */
   suspend fun ensureProfileInitialized(
-    defaultDisplayName: String,
+    googleDisplayName: String?,
+    googlePhotoUrl: String?,
     defaultCurrency: String = CurrencyOption.PHP.code,
   ): Result<CloudUserProfile> = runCloudCatching(OperationType.WRITE, "users/$userId") {
     initMutex.withLock {
-      val snapshot = userDocRef.get().await()
+      val snapshot = runCatching { userDocRef.get(Source.SERVER).await() }
+        .getOrElse { userDocRef.get(Source.DEFAULT).await() }
+      if (!snapshot.metadata.isFromCache) {
+        _hasServerConfirmed.value = true
+      }
+
+      val cleanGoogleName = googleDisplayName?.trim()?.takeIf { it.isNotBlank() }?.take(60)
+      val cleanGooglePhoto = googlePhotoUrl?.trim()?.takeIf { it.isNotBlank() }?.take(1024).orEmpty()
+
       if (snapshot.exists()) {
-        val existing = snapshot.toObject(
-          UserProfileDoc::class.java,
-          DocumentSnapshot.ServerTimestampBehavior.ESTIMATE,
-        )?.toDomain()
-        if (existing != null) {
+        val existingProfile = parseUserProfileSafely(snapshot)
+        if (existingProfile != null) {
+          val updates = mutableMapOf<String, Any>()
+          // Only backfill Google photoUrl on legacy profile docs that never stored the field yet
+          if (!snapshot.contains("photoUrl") && cleanGooglePhoto.isNotEmpty()) {
+            updates["photoUrl"] = cleanGooglePhoto
+          }
+          if (!snapshot.contains("customPhotoBase64")) {
+            updates["customPhotoBase64"] = ""
+          }
+          if (updates.isNotEmpty()) {
+            updates["updatedAt"] = FieldValue.serverTimestamp()
+            runCatching { userDocRef.update(updates).await() }
+          }
           ensureDefaultCategoriesExistInternal()
-          return@withLock existing
+          return@withLock if (!snapshot.contains("photoUrl") && cleanGooglePhoto.isNotEmpty()) {
+            existingProfile.copy(photoUrl = cleanGooglePhoto)
+          } else {
+            existingProfile
+          }
         }
       }
 
-      val cleanName = sanitizeDisplayName(defaultDisplayName)
+      val initialDisplayName = sanitizeDisplayName(cleanGoogleName ?: "Alex")
       val cleanCurrency = CurrencyOption.fromCode(defaultCurrency).code
       val profileMap = mapOf(
         "userId" to userId,
-        "displayName" to cleanName,
+        "displayName" to initialDisplayName,
         "preferredCurrency" to cleanCurrency,
         "onboardingCompleted" to false,
-        "initializedData" to false,
+        "initializedData" to true,
+        "photoUrl" to cleanGooglePhoto,
+        "customPhotoBase64" to "",
         "createdAt" to FieldValue.serverTimestamp(),
         "updatedAt" to FieldValue.serverTimestamp(),
       )
       userDocRef.set(profileMap).await()
       ensureDefaultCategoriesExistInternal()
+      _hasServerConfirmed.value = true
       CloudUserProfile(
         userId = userId,
-        displayName = cleanName,
+        displayName = initialDisplayName,
         preferredCurrency = cleanCurrency,
         onboardingCompleted = false,
-        initializedData = false,
+        initializedData = true,
+        photoUrl = cleanGooglePhoto,
+        customPhotoBase64 = "",
       )
     }
   }
 
-  /**
-   * Completes the new-user Welcome Guide, saving display name & preferred currency to the cloud
-   * and optionally populating starter demonstration records.
-   */
-  suspend fun completeOnboarding(
-    displayName: String,
-    preferredCurrency: String,
-    loadDemoData: Boolean,
-  ): Result<Unit> = runCloudCatching(OperationType.UPDATE, "users/$userId") {
-    initMutex.withLock {
-      val cleanName = sanitizeDisplayName(displayName)
-      val cleanCurrency = CurrencyOption.fromCode(preferredCurrency).code
-      val snapshot = userDocRef.get().await()
-      if (!snapshot.exists()) {
-        userDocRef.set(
-          mapOf(
-            "userId" to userId,
-            "displayName" to cleanName,
-            "preferredCurrency" to cleanCurrency,
-            "onboardingCompleted" to true,
-            "initializedData" to true,
-            "createdAt" to FieldValue.serverTimestamp(),
-            "updatedAt" to FieldValue.serverTimestamp(),
-          )
-        ).await()
-      } else {
-        userDocRef.update(
-          mapOf(
-            "displayName" to cleanName,
-            "preferredCurrency" to cleanCurrency,
-            "onboardingCompleted" to true,
-            "initializedData" to true,
-            "updatedAt" to FieldValue.serverTimestamp(),
-          )
-        ).await()
-      }
-
-      ensureDefaultCategoriesExistInternal()
-
-      if (loadDemoData) {
-        val existingTx = transactionsCol.limit(1).get().await()
-        val existingBudgets = budgetsCol.limit(1).get().await()
-        val existingGoals = goalsCol.limit(1).get().await()
-        if (existingTx.isEmpty && existingBudgets.isEmpty && existingGoals.isEmpty) {
-          seedDemoRecordsInternal()
-        }
-      }
+  suspend fun markSpotlightTourCompleted(): Result<Unit> =
+    runCloudCatching(OperationType.UPDATE, "users/$userId") {
+      userDocRef.update(
+        mapOf(
+          "onboardingCompleted" to true,
+          "updatedAt" to FieldValue.serverTimestamp(),
+        )
+      ).await()
     }
-  }
 
   suspend fun updateDisplayName(displayName: String): Result<Unit> =
     runCloudCatching(OperationType.UPDATE, "users/$userId") {
@@ -339,6 +595,41 @@ class FirestoreSyncRepository(
       ).await()
     }
 
+  suspend fun updateCustomPhotoBase64(base64Jpeg: String): Result<Unit> =
+    runCloudCatching(OperationType.UPDATE, "users/$userId") {
+      require(base64Jpeg.isNotBlank() && base64Jpeg.length <= 250_000) {
+        "Profile photo is too large."
+      }
+      userDocRef.update(
+        mapOf(
+          "customPhotoBase64" to base64Jpeg,
+          "updatedAt" to FieldValue.serverTimestamp(),
+        )
+      ).await()
+    }
+
+  suspend fun revertToGooglePhoto(googlePhotoUrl: String?): Result<Unit> =
+    runCloudCatching(OperationType.UPDATE, "users/$userId") {
+      userDocRef.update(
+        mapOf(
+          "photoUrl" to googlePhotoUrl.orEmpty().trim().take(1024),
+          "customPhotoBase64" to "",
+          "updatedAt" to FieldValue.serverTimestamp(),
+        )
+      ).await()
+    }
+
+  suspend fun removeProfilePhoto(): Result<Unit> =
+    runCloudCatching(OperationType.UPDATE, "users/$userId") {
+      userDocRef.update(
+        mapOf(
+          "photoUrl" to "",
+          "customPhotoBase64" to "",
+          "updatedAt" to FieldValue.serverTimestamp(),
+        )
+      ).await()
+    }
+
   // ---------------------------------------------------------------------------
   // Transactions
   // ---------------------------------------------------------------------------
@@ -356,8 +647,7 @@ class FirestoreSyncRepository(
 
       val existingDocId = if (transaction.id != 0L) txIdToDoc[transaction.id] else null
       if (existingDocId == null) {
-        val docRef = transactionsCol.document()
-        docRef.set(
+        transactionsCol.document().set(
           mapOf(
             "userId" to userId,
             "title" to cleanTitle,
@@ -367,7 +657,7 @@ class FirestoreSyncRepository(
             "dateEpochDay" to transaction.dateEpochDay,
             "paymentMethod" to transaction.paymentMethod.name,
             "notes" to cleanNotes,
-            "sampleData" to transaction.isSampleData,
+            "sampleData" to false,
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp(),
           )
@@ -382,7 +672,7 @@ class FirestoreSyncRepository(
             "dateEpochDay" to transaction.dateEpochDay,
             "paymentMethod" to transaction.paymentMethod.name,
             "notes" to cleanNotes,
-            "sampleData" to transaction.isSampleData,
+            "sampleData" to false,
             "updatedAt" to FieldValue.serverTimestamp(),
           )
         ).await()
@@ -431,7 +721,7 @@ class FirestoreSyncRepository(
               "limitCentavos" to budget.limitCentavos,
               "year" to budget.year,
               "month" to budget.month,
-              "sampleData" to budget.isSampleData,
+              "sampleData" to false,
               "createdAt" to FieldValue.serverTimestamp(),
               "updatedAt" to FieldValue.serverTimestamp(),
             )
@@ -458,7 +748,7 @@ class FirestoreSyncRepository(
               "limitCentavos" to budget.limitCentavos,
               "year" to budget.year,
               "month" to budget.month,
-              "sampleData" to budget.isSampleData,
+              "sampleData" to false,
               "updatedAt" to FieldValue.serverTimestamp(),
             )
           ).await()
@@ -497,7 +787,7 @@ class FirestoreSyncRepository(
             "targetDateEpochDay" to goal.targetDateEpochDay,
             "createdDateEpochDay" to goal.createdDateEpochDay,
             "status" to goal.status.name,
-            "sampleData" to goal.isSampleData,
+            "sampleData" to false,
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp(),
           )
@@ -511,7 +801,7 @@ class FirestoreSyncRepository(
             "targetDateEpochDay" to goal.targetDateEpochDay,
             "createdDateEpochDay" to goal.createdDateEpochDay,
             "status" to goal.status.name,
-            "sampleData" to goal.isSampleData,
+            "sampleData" to false,
             "updatedAt" to FieldValue.serverTimestamp(),
           )
         ).await()
@@ -661,27 +951,20 @@ class FirestoreSyncRepository(
     }
 
   // ---------------------------------------------------------------------------
-  // Demo Data Reset & Clear Financial Records
+  // Clear All Financial Records (Production)
   // ---------------------------------------------------------------------------
-  suspend fun resetToDemonstrationData(): Result<Unit> =
-    runCloudCatching(OperationType.WRITE, "users/$userId") {
-      initMutex.withLock {
-        deleteAllRecordsInSubcollections(deleteCustomCategories = false)
-        ensureDefaultCategoriesExistInternal()
-        seedDemoRecordsInternal()
-        userDocRef.update(
-          mapOf(
-            "initializedData" to true,
-            "updatedAt" to FieldValue.serverTimestamp(),
-          )
-        ).await()
-      }
-    }
-
   suspend fun clearAllFinancialRecords(): Result<Unit> =
     runCloudCatching(OperationType.DELETE, "users/$userId") {
       initMutex.withLock {
-        deleteAllRecordsInSubcollections(deleteCustomCategories = true)
+        val refs = mutableListOf<DocumentReference>()
+        refs += transactionsCol.get().await().documents.map { it.reference }
+        refs += budgetsCol.get().await().documents.map { it.reference }
+        refs += contributionsCol.get().await().documents.map { it.reference }
+        refs += goalsCol.get().await().documents.map { it.reference }
+        refs += categoriesCol.get().await().documents
+          .filter { it.getBoolean("defaultCategory") != true }
+          .map { it.reference }
+        commitBatchDeletes(refs)
         ensureDefaultCategoriesExistInternal()
       }
     }
@@ -708,89 +991,6 @@ class FirestoreSyncRepository(
       }
     }
     commitBatchSets(missingSets)
-  }
-
-  private suspend fun seedDemoRecordsInternal() {
-    val refMonth = YearMonthKey.current()
-    val sets = mutableListOf<Pair<DocumentReference, Map<String, Any>>>()
-
-    SampleDataSeeder.sampleTransactions(refMonth).forEach { tx ->
-      sets += transactionsCol.document() to mapOf(
-        "userId" to userId,
-        "title" to tx.title,
-        "amountCentavos" to tx.amountCentavos,
-        "type" to tx.type.name,
-        "category" to tx.category,
-        "dateEpochDay" to tx.dateEpochDay,
-        "paymentMethod" to tx.paymentMethod.name,
-        "notes" to tx.notes,
-        "sampleData" to true,
-        "createdAt" to FieldValue.serverTimestamp(),
-        "updatedAt" to FieldValue.serverTimestamp(),
-      )
-    }
-
-    SampleDataSeeder.sampleBudgets(refMonth).forEach { budget ->
-      sets += budgetsCol.document() to mapOf(
-        "userId" to userId,
-        "category" to budget.category,
-        "limitCentavos" to budget.limitCentavos,
-        "year" to budget.year,
-        "month" to budget.month,
-        "sampleData" to true,
-        "createdAt" to FieldValue.serverTimestamp(),
-        "updatedAt" to FieldValue.serverTimestamp(),
-      )
-    }
-
-    val sampleGoals = SampleDataSeeder.sampleGoals(refMonth)
-    val goalRefs = sampleGoals.map { goalsCol.document() }
-    val syntheticGoalIds = goalRefs.map { stablePositiveLongId(it.id) }
-    val goalIdToDocId = syntheticGoalIds.zip(goalRefs.map { it.id }).toMap()
-
-    sampleGoals.zip(goalRefs).forEach { (goal, goalRef) ->
-      sets += goalRef to mapOf(
-        "userId" to userId,
-        "name" to goal.name,
-        "targetCentavos" to goal.targetCentavos,
-        "currentSavedCentavos" to goal.currentSavedCentavos,
-        "targetDateEpochDay" to goal.targetDateEpochDay,
-        "createdDateEpochDay" to goal.createdDateEpochDay,
-        "status" to goal.status.name,
-        "sampleData" to true,
-        "createdAt" to FieldValue.serverTimestamp(),
-        "updatedAt" to FieldValue.serverTimestamp(),
-      )
-    }
-
-    SampleDataSeeder.sampleContributionsForGoals(syntheticGoalIds, refMonth).forEach { contrib ->
-      val goalDocId = goalIdToDocId[contrib.goalId] ?: return@forEach
-      sets += contributionsCol.document() to mapOf(
-        "userId" to userId,
-        "goalDocId" to goalDocId,
-        "amountCentavos" to contrib.amountCentavos,
-        "withdrawal" to contrib.isWithdrawal,
-        "note" to contrib.note,
-        "dateEpochDay" to contrib.dateEpochDay,
-        "createdAt" to FieldValue.serverTimestamp(),
-      )
-    }
-
-    commitBatchSets(sets)
-  }
-
-  private suspend fun deleteAllRecordsInSubcollections(deleteCustomCategories: Boolean) {
-    val refs = mutableListOf<DocumentReference>()
-    refs += transactionsCol.get().await().documents.map { it.reference }
-    refs += budgetsCol.get().await().documents.map { it.reference }
-    refs += contributionsCol.get().await().documents.map { it.reference }
-    refs += goalsCol.get().await().documents.map { it.reference }
-    if (deleteCustomCategories) {
-      refs += categoriesCol.get().await().documents
-        .filter { it.getBoolean("defaultCategory") != true }
-        .map { it.reference }
-    }
-    commitBatchDeletes(refs)
   }
 
   private suspend fun commitBatchSets(entries: List<Pair<DocumentReference, Map<String, Any>>>) {
@@ -827,7 +1027,7 @@ class FirestoreSyncRepository(
     throw e
   } catch (e: Exception) {
     FirestoreErrorHandler.logFirestoreError(e, operationType, path)
-    _syncStatus.value = CloudSyncStatus.ERROR
+    _hasSyncError.value = true
     _lastSyncError.value = e.localizedMessage ?: "Cloud sync error."
     Result.failure(e)
   }

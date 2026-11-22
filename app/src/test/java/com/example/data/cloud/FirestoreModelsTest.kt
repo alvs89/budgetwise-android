@@ -59,6 +59,8 @@ class FirestoreModelsTest {
       preferredCurrency = "USD",
       onboardingCompleted = true,
       initializedData = true,
+      photoUrl = "  https://lh3.googleusercontent.com/a/photo  ",
+      customPhotoBase64 = "abc123base64",
       createdAt = ts,
       updatedAt = ts,
     ).toDomain()
@@ -66,6 +68,8 @@ class FirestoreModelsTest {
     assertEquals("uid_123", profile.userId)
     assertEquals("Maria", profile.displayName)
     assertEquals(CurrencyOption.USD.code, profile.preferredCurrency)
+    assertEquals("https://lh3.googleusercontent.com/a/photo", profile.photoUrl)
+    assertEquals("abc123base64", profile.customPhotoBase64)
     assertTrue(profile.onboardingCompleted)
 
     val tx = TransactionDoc(

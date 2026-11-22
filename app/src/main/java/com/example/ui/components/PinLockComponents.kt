@@ -82,14 +82,14 @@ import com.example.ui.theme.LocalFinanceColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-fun isBiometricAuthAvailable(context: Context): Boolean {
+fun isBiometricAuthAvailable(context: Context): Boolean = runCatching {
   val manager = BiometricManager.from(context)
   val result = manager.canAuthenticate(
     BiometricManager.Authenticators.BIOMETRIC_STRONG or
       BiometricManager.Authenticators.BIOMETRIC_WEAK
   )
-  return result == BiometricManager.BIOMETRIC_SUCCESS
-}
+  result == BiometricManager.BIOMETRIC_SUCCESS
+}.getOrDefault(false)
 
 private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
   is FragmentActivity -> this
@@ -109,33 +109,37 @@ fun showBiometricUnlockPrompt(
     onFallbackToPin()
     return
   }
-  val executor = ContextCompat.getMainExecutor(activity)
-  val prompt = BiometricPrompt(
-    activity,
-    executor,
-    object : BiometricPrompt.AuthenticationCallback() {
-      override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-        super.onAuthenticationSucceeded(result)
-        onSuccess()
-      }
+  runCatching {
+    val executor = ContextCompat.getMainExecutor(activity)
+    val prompt = BiometricPrompt(
+      activity,
+      executor,
+      object : BiometricPrompt.AuthenticationCallback() {
+        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+          super.onAuthenticationSucceeded(result)
+          onSuccess()
+        }
 
-      override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-        super.onAuthenticationError(errorCode, errString)
-        onFallbackToPin()
-      }
-    },
-  )
-  val promptInfo = BiometricPrompt.PromptInfo.Builder()
-    .setTitle(title)
-    .setSubtitle(subtitle)
-    .setAllowedAuthenticators(
-      BiometricManager.Authenticators.BIOMETRIC_STRONG or
-        BiometricManager.Authenticators.BIOMETRIC_WEAK
+        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+          super.onAuthenticationError(errorCode, errString)
+          onFallbackToPin()
+        }
+      },
     )
-    .setNegativeButtonText("Use PIN")
-    .setConfirmationRequired(false)
-    .build()
-  prompt.authenticate(promptInfo)
+    val promptInfo = BiometricPrompt.PromptInfo.Builder()
+      .setTitle(title)
+      .setSubtitle(subtitle)
+      .setAllowedAuthenticators(
+        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+          BiometricManager.Authenticators.BIOMETRIC_WEAK
+      )
+      .setNegativeButtonText("Use PIN")
+      .setConfirmationRequired(false)
+      .build()
+    prompt.authenticate(promptInfo)
+  }.onFailure {
+    onFallbackToPin()
+  }
 }
 
 @Composable

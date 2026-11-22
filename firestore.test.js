@@ -174,13 +174,23 @@ describe('BudgetWise Firestore Security Rules', () => {
     await assertSucceeds(profileRef.set(validProfile()));
     await assertSucceeds(profileRef.get());
 
-    // Valid partial update (displayName, currency, onboardingCompleted)
+    // Valid partial update (displayName, currency, onboardingCompleted, photoUrl, customPhotoBase64)
     await assertSucceeds(
       profileRef.update({
         displayName: 'Alex Santos',
         preferredCurrency: 'USD',
         onboardingCompleted: true,
         initializedData: true,
+        photoUrl: 'https://lh3.googleusercontent.com/a/example',
+        customPhotoBase64: '/9j/4AAQSkZJRgABAQAAAQABAAD/',
+        updatedAt: pastDate(1),
+      })
+    );
+
+    // Reject oversized customPhotoBase64 (> 250,000 chars)
+    await assertFails(
+      profileRef.update({
+        customPhotoBase64: 'a'.repeat(250001),
         updatedAt: pastDate(1),
       })
     );

@@ -41,8 +41,10 @@ import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.PieChart
 import androidx.compose.material.icons.rounded.ReceiptLong
@@ -66,6 +68,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,8 +76,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import kotlin.math.abs
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -108,6 +116,8 @@ import com.example.ui.components.LocalIsAppLocked
 import com.example.ui.components.LocalIsBalanceHidden
 import com.example.ui.components.NotificationCenterSheet
 import com.example.ui.components.PinLockOverlay
+import com.example.ui.components.SpotlightTargetId
+import com.example.ui.components.SpotlightTourOverlay
 import com.example.ui.components.TransactionEditorSheet
 import com.example.ui.screens.ActivityScreen
 import com.example.ui.screens.BudgetsScreen
@@ -119,9 +129,10 @@ import com.example.ui.screens.ManageCategoriesScreen
 import com.example.ui.screens.NotificationsSettingsScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SignInScreen
-import com.example.ui.screens.WelcomeGuideScreen
 import com.example.ui.theme.BudgetWiseTheme
+import com.example.ui.viewmodel.AppToastMessage
 import com.example.ui.viewmodel.BudgetWiseViewModel
+import com.example.ui.viewmodel.ToastType
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.delay
@@ -140,7 +151,6 @@ import java.io.File
 @Serializable object ManageCategoriesRoute
 @Serializable object NotificationsSettingsRoute
 @Serializable object HelpCenterRoute
-@Serializable object WelcomeGuideReplayRoute
 
 private data class TopLevelDestination(
   val route: Any,
@@ -197,6 +207,7 @@ fun BudgetWiseRoot(
   var isSigningIn by remember { mutableStateOf(false) }
   var signInError by remember { mutableStateOf<String?>(null) }
   var attemptedAutoSignIn by rememberSaveable { mutableStateOf(false) }
+  var authSessionNonce by rememberSaveable { mutableIntStateOf(0) }
   val coroutineScope = rememberCoroutineScope()
 
   LaunchedEffect(currentUser, attemptedAutoSignIn) {
@@ -241,17 +252,22 @@ fun BudgetWiseRoot(
         )
       }
     } else {
-      key(activeUser.uid) {
-        val application = context.applicationContext as Application
+      val sessionScopeKey = "${activeUser.uid}_$authSessionNonce"
+      val application = remember(context) {
+        (context.applicationContext as? Application) ?: context.findActivity()?.application
+      }
+      if (application != null) {
+      key(sessionScopeKey) {
         val firestore = remember(context) { getBudgetWiseFirestore(context.applicationContext) }
         val scopedViewModel: BudgetWiseViewModel = viewModel(
-          key = activeUser.uid,
+          key = sessionScopeKey,
           factory = BudgetWiseViewModel.provideFactory(
             application = application,
             firestore = firestore,
             userId = activeUser.uid,
             accountDisplayName = activeUser.displayName,
             accountEmail = activeUser.email,
+            accountPhotoUrl = activeUser.photoUrl?.toString(),
           ),
         )
 
@@ -277,15 +293,21 @@ fun BudgetWiseRoot(
               GoogleAuthHelper.signOut(
                 context = context,
                 auth = auth,
-                onBeforeSignOut = { scopedViewModel.prepareForSignOut() },
+                onBeforeSignOut = {
+                  scopedViewModel.prepareForSignOut()
+                  authSessionNonce += 1
+                },
               )
             }
           },
         )
       }
+      }
     }
 
-    LaunchSplashOverlay(visible = showLaunchSplash)
+    BudgetWiseTheme(themeMode = localPrefs.themeMode) {
+      LaunchSplashOverlay(visible = showLaunchSplash)
+    }
   }
 }
 
@@ -331,13 +353,13 @@ fun BudgetWiseApp(
     }
   }
 
-  var activeToastMessage by remember { mutableStateOf<String?>(null) }
+  var activeToast by remember { mutableStateOf<AppToastMessage?>(null) }
   var isToastVisible by remember { mutableStateOf(false) }
   var toastSequence by remember { mutableIntStateOf(0) }
 
   LaunchedEffect(Unit) {
-    viewModel.snackbarMessages.collect { message ->
-      activeToastMessage = message
+    viewModel.snackbarMessages.collect { toast ->
+      activeToast = toast
       isToastVisible = true
       toastSequence += 1
     }
@@ -368,6 +390,52 @@ fun BudgetWiseApp(
 
   val showLaunchSplash = externalSplashActive ?: internalShowLaunchSplash
   val dashboardRevealed = externalDashboardRevealed ?: internalDashboardRevealed
+  val effectiveAppLock = isAppLocked &&
+    uiState.preferences.appLockEnabled &&
+    !uiState.preferences.pinHashRecord.isNullOrBlank()
+
+  val spotlightBounds = remember { mutableStateMapOf<SpotlightTargetId, Rect>() }
+  val updateSpotlightBounds: (SpotlightTargetId, Rect) -> Unit = remember {
+    { targetId, rect ->
+      if (
+        rect.left.isFinite() &&
+        rect.top.isFinite() &&
+        rect.right.isFinite() &&
+        rect.bottom.isFinite() &&
+        rect.width > 1f &&
+        rect.height > 1f
+      ) {
+        val existing = spotlightBounds[targetId]
+        val changedSignificantly = existing == null ||
+          abs(existing.left - rect.left) >= 1f ||
+          abs(existing.top - rect.top) >= 1f ||
+          abs(existing.right - rect.right) >= 1f ||
+          abs(existing.bottom - rect.bottom) >= 1f
+        if (changedSignificantly) {
+          spotlightBounds[targetId] = rect
+        }
+      }
+    }
+  }
+  val updateSpotlightBoundsFromCoords: (SpotlightTargetId, LayoutCoordinates) -> Unit = remember {
+    { targetId, coords ->
+      if (coords.isAttached) {
+        runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+          updateSpotlightBounds(targetId, rect)
+        }
+      }
+    }
+  }
+  var isReplayingTour by rememberSaveable { mutableStateOf(false) }
+  var spotlightStepIndex by rememberSaveable { mutableIntStateOf(0) }
+  var homeScrollToTopSignal by remember { mutableIntStateOf(0) }
+
+  LaunchedEffect(uiState.shouldShowSpotlightTour) {
+    if (uiState.shouldShowSpotlightTour) {
+      spotlightStepIndex = 0
+      homeScrollToTopSignal += 1
+    }
+  }
 
   BudgetWiseTheme(themeMode = uiState.preferences.themeMode) {
     CompositionLocalProvider(
@@ -387,41 +455,25 @@ fun BudgetWiseApp(
           ) {
             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
           }
-        } else if (!uiState.preferences.onboardingCompleted) {
-          WelcomeGuideScreen(
-            isReplayMode = false,
-            initialDisplayName = uiState.preferences.displayName,
-            initialCurrencyCode = uiState.preferences.preferredCurrency,
-            isSubmitting = uiState.isCompletingOnboarding,
-            errorMessage = uiState.cloudErrorMessage,
-            onComplete = { displayName, currencyCode, loadDemoData ->
-              viewModel.completeOnboarding(
-                displayName = displayName,
-                currencyCode = currencyCode,
-                loadDemoData = loadDemoData,
-              )
-            },
-            onSkip = viewModel::skipOnboarding,
-          )
         } else {
-          CompositionLocalProvider(LocalIsAppLocked provides isAppLocked) {
+          CompositionLocalProvider(LocalIsAppLocked provides effectiveAppLock) {
           val navController = rememberNavController()
           val backStackEntry by navController.currentBackStackEntryAsState()
           val currentDestination = backStackEntry?.destination
+          val isHomeRoute = currentDestination?.hasRoute<HomeRoute>() == true
           val isSettingsRoute =
             currentDestination?.hasRoute<SettingsRoute>() == true ||
               currentDestination?.hasRoute<ManageCategoriesRoute>() == true ||
               currentDestination?.hasRoute<NotificationsSettingsRoute>() == true ||
-              currentDestination?.hasRoute<HelpCenterRoute>() == true ||
-              currentDestination?.hasRoute<WelcomeGuideReplayRoute>() == true
+              currentDestination?.hasRoute<HelpCenterRoute>() == true
 
     var showTransactionSheet by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionEntity?>(null) }
     var pendingDeleteFromSheet by remember { mutableStateOf<TransactionEntity?>(null) }
     var showChatSheet by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(isAppLocked) {
-      if (isAppLocked) {
+    LaunchedEffect(effectiveAppLock) {
+      if (effectiveAppLock) {
         showExportDialog = false
         showNotificationsSheet = false
         showTransactionSheet = false
@@ -431,7 +483,7 @@ fun BudgetWiseApp(
       }
     }
 
-    if (showExportDialog && !isAppLocked) {
+    if (showExportDialog && !effectiveAppLock) {
       ExportReportDialog(
         uiState = uiState,
         isExporting = isExportingReport,
@@ -468,7 +520,7 @@ fun BudgetWiseApp(
             if (error == null) {
               showExportDialog = false
             } else {
-              viewModel.notifyUser(error)
+              viewModel.notifyUser(error, ToastType.ERROR)
             }
           }
         },
@@ -476,7 +528,7 @@ fun BudgetWiseApp(
       )
     }
 
-    if (showChatSheet && !isAppLocked) {
+    if (showChatSheet && !effectiveAppLock) {
       FinancialChatSheet(
         uiState = uiState,
         chatUiState = chatUiState,
@@ -494,7 +546,7 @@ fun BudgetWiseApp(
       )
     }
 
-    if (showTransactionSheet && !isAppLocked) {
+    if (showTransactionSheet && !effectiveAppLock) {
       TransactionEditorSheet(
         existingTransaction = editingTransaction,
         categories = uiState.categories,
@@ -522,7 +574,7 @@ fun BudgetWiseApp(
       )
     }
 
-    if (!isAppLocked) {
+    if (!effectiveAppLock) {
       pendingDeleteFromSheet?.let { tx ->
         ConfirmationDialog(
           title = "Delete Transaction?",
@@ -561,15 +613,15 @@ fun BudgetWiseApp(
       }
     }
 
-    LaunchedEffect(pendingAlertDestination, uiState.isLoading, isAppLocked) {
+    LaunchedEffect(pendingAlertDestination, uiState.isLoading, effectiveAppLock) {
       val dest = pendingAlertDestination
-      if (dest != null && !uiState.isLoading && !isAppLocked && uiState.preferences.onboardingCompleted) {
+      if (dest != null && !uiState.isLoading && !effectiveAppLock) {
         navigateToAlertDestination(dest)
         viewModel.consumePendingAlertDestination()
       }
     }
 
-    if (showNotificationsSheet && !isAppLocked) {
+    if (showNotificationsSheet && !effectiveAppLock) {
       NotificationCenterSheet(
         alerts = uiState.financialAlerts,
         unreadCount = uiState.unreadAlertCount,
@@ -600,7 +652,11 @@ fun BudgetWiseApp(
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
           if (!useNavRail && !isSettingsRoute) {
-            NavigationBar {
+            NavigationBar(
+              modifier = Modifier.onGloballyPositioned { coords ->
+                updateSpotlightBoundsFromCoords(SpotlightTargetId.BOTTOM_NAV_BAR, coords)
+              },
+            ) {
               TopLevelDestinations.forEach { dest ->
                 val selected = when (dest.route) {
                   is HomeRoute -> currentDestination?.hasRoute<HomeRoute>() == true
@@ -638,6 +694,9 @@ fun BudgetWiseApp(
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier
                   .minimumInteractiveComponentSize()
+                  .onGloballyPositioned { coords ->
+                    updateSpotlightBoundsFromCoords(SpotlightTargetId.FAB_AI_ASSISTANT, coords)
+                  }
                   .testTag("fab_open_chat"),
               ) {
                 Icon(
@@ -653,7 +712,11 @@ fun BudgetWiseApp(
                 },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.testTag("fab_add_transaction"),
+                modifier = Modifier
+                  .onGloballyPositioned { coords ->
+                    updateSpotlightBoundsFromCoords(SpotlightTargetId.FAB_ADD_TRANSACTION, coords)
+                  }
+                  .testTag("fab_add_transaction"),
               ) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add transaction")
               }
@@ -667,7 +730,11 @@ fun BudgetWiseApp(
             .padding(innerPadding),
         ) {
           if (useNavRail && !isSettingsRoute) {
-            NavigationRail {
+            NavigationRail(
+              modifier = Modifier.onGloballyPositioned { coords ->
+                updateSpotlightBoundsFromCoords(SpotlightTargetId.BOTTOM_NAV_BAR, coords)
+              },
+            ) {
               TopLevelDestinations.forEach { dest ->
                 val selected = when (dest.route) {
                   is HomeRoute -> currentDestination?.hasRoute<HomeRoute>() == true
@@ -723,6 +790,8 @@ fun BudgetWiseApp(
                 dashboardRevealed = dashboardRevealed,
                 hasPlayedEntrance = hasPlayedDashboardEntrance,
                 onEntranceAnimationPlayed = { hasPlayedDashboardEntrance = true },
+                scrollToTopSignal = homeScrollToTopSignal,
+                onRegisterSpotlightBounds = updateSpotlightBounds,
               )
             }
             composable<ActivityRoute> {
@@ -790,9 +859,15 @@ fun BudgetWiseApp(
                 onOpenNotificationsSettings = { navController.navigate(NotificationsSettingsRoute) },
                 onOpenHelpCenter = { navController.navigate(HelpCenterRoute) },
                 onExportData = { showExportDialog = true },
-                onResetDemoData = viewModel::resetDemonstrationData,
                 onClearAllData = viewModel::clearAllRecords,
                 onSignOut = onSignOut,
+                onPickProfilePhotoUri = viewModel::updateProfilePhotoFromUri,
+                onSaveCroppedProfilePhoto = viewModel::saveCroppedProfilePhoto,
+                onShowErrorToast = { msg -> viewModel.notifyUser(msg, ToastType.ERROR) },
+                onUseGooglePhoto = viewModel::useGoogleProfilePhoto,
+                onRemoveProfilePhoto = viewModel::removeProfilePhoto,
+                onVerifyCloudSync = viewModel::verifyCloudSync,
+                onSuppressNextBackgroundLock = viewModel::suppressNextBackgroundLock,
               )
             }
             composable<ManageCategoriesRoute> {
@@ -819,25 +894,60 @@ fun BudgetWiseApp(
               HelpCenterScreen(
                 onBack = { navController.popBackStack() },
                 onOpenAssistant = { showChatSheet = true },
-                onReplayWelcomeGuide = { navController.navigate(WelcomeGuideReplayRoute) },
-              )
-            }
-            composable<WelcomeGuideReplayRoute> {
-              WelcomeGuideScreen(
-                isReplayMode = true,
-                onFinishReplay = { navController.popBackStack() },
+                onReplayWelcomeGuide = {
+                  val popped = navController.popBackStack(HomeRoute, inclusive = false)
+                  if (!popped) {
+                    navigateTopLevel(HomeRoute)
+                  }
+                  homeScrollToTopSignal += 1
+                  spotlightStepIndex = 0
+                  isReplayingTour = true
+                },
               )
             }
           }
         }
         }
+
+        val showSpotlightOverlay = !uiState.isLoading &&
+          !effectiveAppLock &&
+          !showLaunchSplash &&
+          isHomeRoute &&
+          (uiState.shouldShowSpotlightTour || isReplayingTour)
+
+        SpotlightTourHost(
+          visible = showSpotlightOverlay,
+          currentStepIndex = spotlightStepIndex,
+          spotlightBounds = spotlightBounds,
+          onNext = {
+            spotlightStepIndex += 1
+          },
+          onBack = {
+            spotlightStepIndex = (spotlightStepIndex - 1).coerceAtLeast(0)
+          },
+          onSkip = {
+            isReplayingTour = false
+            spotlightStepIndex = 0
+            if (uiState.shouldShowSpotlightTour) {
+              viewModel.completeSpotlightTour()
+            }
+          },
+          onDone = {
+            isReplayingTour = false
+            spotlightStepIndex = 0
+            if (uiState.shouldShowSpotlightTour) {
+              viewModel.completeSpotlightTour()
+            }
+          },
+        )
         }
           }
         }
 
         TopFloatingToastBanner(
-          visible = isToastVisible && !activeToastMessage.isNullOrBlank() && !isAppLocked && !showLaunchSplash,
-          message = activeToastMessage.orEmpty(),
+          visible = isToastVisible && !activeToast?.message.isNullOrBlank() && !effectiveAppLock && !showLaunchSplash,
+          message = activeToast?.message.orEmpty(),
+          type = activeToast?.type ?: ToastType.SUCCESS,
           onDismiss = { isToastVisible = false },
           modifier = Modifier
             .align(Alignment.TopCenter)
@@ -846,7 +956,7 @@ fun BudgetWiseApp(
         )
 
         PinLockOverlay(
-          visible = !uiState.isLoading && uiState.preferences.onboardingCompleted && isAppLocked,
+          visible = !uiState.isLoading && effectiveAppLock,
           splashActive = showLaunchSplash,
           biometricEnabled = uiState.preferences.biometricUnlockEnabled,
           failedAttempts = uiState.preferences.failedPinAttempts,
@@ -869,12 +979,43 @@ fun BudgetWiseApp(
 }
 
 @Composable
+private fun SpotlightTourHost(
+  visible: Boolean,
+  currentStepIndex: Int,
+  spotlightBounds: Map<SpotlightTargetId, Rect>,
+  onNext: () -> Unit,
+  onBack: () -> Unit,
+  onSkip: () -> Unit,
+  onDone: () -> Unit,
+) {
+  // Only read the SnapshotStateMap when the tour overlay is actually visible so layout bounds
+  // updates on Home never invalidate the parent Scaffold or NavHost composition scope.
+  val boundsSnapshot = if (visible) spotlightBounds.toMap() else emptyMap()
+  SpotlightTourOverlay(
+    visible = visible,
+    currentStepIndex = currentStepIndex,
+    targetBounds = boundsSnapshot,
+    onNext = onNext,
+    onBack = onBack,
+    onSkip = onSkip,
+    onDone = onDone,
+  )
+}
+
+@Composable
 private fun TopFloatingToastBanner(
   visible: Boolean,
   message: String,
+  type: ToastType,
   onDismiss: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val (iconVector, accentColor, borderAlpha) = when (type) {
+    ToastType.SUCCESS -> Triple(Icons.Rounded.CheckCircle, MaterialTheme.colorScheme.primary, 0.38f)
+    ToastType.ERROR -> Triple(Icons.Rounded.ErrorOutline, MaterialTheme.colorScheme.error, 0.50f)
+    ToastType.INFO -> Triple(Icons.Rounded.Info, MaterialTheme.colorScheme.tertiary, 0.42f)
+  }
+
   AnimatedVisibility(
     visible = visible,
     enter = slideInVertically(
@@ -892,7 +1033,7 @@ private fun TopFloatingToastBanner(
       shape = RoundedCornerShape(14.dp),
       color = MaterialTheme.colorScheme.surfaceVariant,
       contentColor = MaterialTheme.colorScheme.onSurface,
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+      border = BorderStroke(1.dp, accentColor.copy(alpha = borderAlpha)),
       tonalElevation = 4.dp,
       shadowElevation = 8.dp,
       modifier = Modifier
@@ -908,9 +1049,9 @@ private fun TopFloatingToastBanner(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
       ) {
         Icon(
-          imageVector = Icons.Rounded.CheckCircle,
+          imageVector = iconVector,
           contentDescription = null,
-          tint = MaterialTheme.colorScheme.primary,
+          tint = accentColor,
           modifier = Modifier.size(20.dp),
         )
         Text(

@@ -36,6 +36,8 @@ data class CloudUserProfile(
   val preferredCurrency: String,
   val onboardingCompleted: Boolean,
   val initializedData: Boolean,
+  val photoUrl: String = "",
+  val customPhotoBase64: String = "",
 )
 
 @Keep
@@ -47,6 +49,8 @@ data class UserProfileDoc(
   val preferredCurrency: String = CurrencyOption.PHP.code,
   val onboardingCompleted: Boolean = false,
   val initializedData: Boolean = false,
+  val photoUrl: String = "",
+  val customPhotoBase64: String = "",
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
 ) {
@@ -56,6 +60,8 @@ data class UserProfileDoc(
     preferredCurrency = CurrencyOption.fromCode(preferredCurrency).code,
     onboardingCompleted = onboardingCompleted,
     initializedData = initializedData,
+    photoUrl = photoUrl.trim(),
+    customPhotoBase64 = customPhotoBase64.trim(),
   )
 }
 

@@ -12,7 +12,6 @@ import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.domain.ChatRole
-import com.example.domain.YearMonthKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -48,34 +47,16 @@ class BudgetWiseRepository(
   val financialAlerts: Flow<List<FinancialAlertEntity>> = financialAlertDao.observeAllAlerts()
 
   /**
-   * Populates default categories and initial demonstration records once on first launch when
-   * the database is empty.
+   * Populates the 30 built-in income & expense categories once on first launch so accounts start
+   * with a clean ₱0.00 ledger ready for real transactions.
    */
   suspend fun ensureInitialDataSeeded() {
     seedMutex.withLock {
       categoryDao.insertAll(SampleDataSeeder.defaultCategories())
       val prefs = preferencesRepository.userPreferences.first()
-      if (!prefs.hasSeededInitialData &&
-        transactionDao.count() == 0 &&
-        budgetDao.count() == 0 &&
-        savingsGoalDao.countGoals() == 0
-      ) {
-        seedDemoRecordsInternal()
+      if (!prefs.hasSeededInitialData) {
         preferencesRepository.markInitialDataSeeded()
       }
-    }
-  }
-
-  suspend fun resetToDemonstrationData() {
-    seedMutex.withLock {
-      transactionDao.deleteAll()
-      budgetDao.deleteAll()
-      savingsGoalDao.deleteAllContributions()
-      savingsGoalDao.deleteAllGoals()
-      financialAlertDao.deleteAll()
-      categoryDao.insertAll(SampleDataSeeder.defaultCategories())
-      seedDemoRecordsInternal()
-      preferencesRepository.markInitialDataSeeded()
     }
   }
 
@@ -91,16 +72,6 @@ class BudgetWiseRepository(
       financialAlertDao.deleteAll()
       preferencesRepository.markInitialDataSeeded()
     }
-  }
-
-  private suspend fun seedDemoRecordsInternal() {
-    val refMonth = YearMonthKey.current()
-    transactionDao.insertAll(SampleDataSeeder.sampleTransactions(refMonth))
-    budgetDao.insertAll(SampleDataSeeder.sampleBudgets(refMonth))
-    val goalIds = savingsGoalDao.insertAllGoals(SampleDataSeeder.sampleGoals(refMonth))
-    savingsGoalDao.insertAllContributions(
-      SampleDataSeeder.sampleContributionsForGoals(goalIds, refMonth)
-    )
   }
 
   // Transactions

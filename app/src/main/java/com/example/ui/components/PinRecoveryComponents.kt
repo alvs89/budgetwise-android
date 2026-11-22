@@ -77,8 +77,8 @@ private tailrec fun Context.findRecoveryFragmentActivity(): FragmentActivity? = 
  * Returns true if the device supports strong/weak biometrics or a secure system lock screen
  * (PIN, pattern, or password) that can prove device ownership during PIN recovery.
  */
-fun isDeviceCredentialRecoveryAvailable(context: Context): Boolean {
-  return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+fun isDeviceCredentialRecoveryAvailable(context: Context): Boolean = runCatching {
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
     val manager = BiometricManager.from(context)
     val result = manager.canAuthenticate(
       BiometricManager.Authenticators.BIOMETRIC_STRONG or
@@ -90,7 +90,7 @@ fun isDeviceCredentialRecoveryAvailable(context: Context): Boolean {
     val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
     keyguard?.isDeviceSecure == true || isBiometricAuthAvailable(context)
   }
-}
+}.getOrDefault(false)
 
 /**
  * Triggers Android's system Biometric / Device Credential prompt to verify device ownership

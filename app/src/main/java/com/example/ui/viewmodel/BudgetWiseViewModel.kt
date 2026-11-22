@@ -1,8 +1,10 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -12,6 +14,7 @@ import com.example.ai.GeminiFinancialChatService
 import com.example.data.cloud.CloudProfileState
 import com.example.data.cloud.CloudSyncStatus
 import com.example.data.cloud.FirestoreSyncRepository
+import com.example.data.cloud.ProfilePhotoProcessor
 import com.example.data.local.BudgetWiseDatabase
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
@@ -24,6 +27,9 @@ import com.example.data.local.entity.TransactionEntity
 import com.example.data.preferences.UserPreferences
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.repository.BudgetWiseRepository
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
+import com.google.firebase.auth.userProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
 import com.example.domain.AlertDestination
 import com.example.domain.AlertThresholdDefaults
@@ -79,6 +85,17 @@ enum class HomePeriodScope(val label: String) {
   THIS_MONTH("This Month"),
   ALL_TIME("All Time"),
 }
+
+enum class ToastType {
+  SUCCESS,
+  ERROR,
+  INFO,
+}
+
+data class AppToastMessage(
+  val message: String,
+  val type: ToastType = ToastType.SUCCESS,
+)
 
 data class ActivityFilterState(
   val searchQuery: String = "",
@@ -152,7 +169,11 @@ data class BudgetWiseUiState(
   val unreadAlertCount: Int = 0,
   val syncStatus: CloudSyncStatus = CloudSyncStatus.SYNCED,
   val accountEmail: String? = null,
-  val isCompletingOnboarding: Boolean = false,
+  val profilePhotoUrl: String = "",
+  val customPhotoBase64: String = "",
+  val googlePhotoUrl: String? = null,
+  val isUpdatingPhoto: Boolean = false,
+  val shouldShowSpotlightTour: Boolean = false,
   val cloudErrorMessage: String? = null,
 )
 
@@ -175,7 +196,7 @@ private data class SecondaryInputs(
 private data class CloudMetaInputs(
   val profileState: CloudProfileState,
   val syncStatus: CloudSyncStatus,
-  val isCompletingOnboarding: Boolean,
+  val isUpdatingPhoto: Boolean,
   val cloudErrorMessage: String?,
 )
 
@@ -190,11 +211,13 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   application: Application,
   private val geminiChatService: FinancialChatService = GeminiFinancialChatService(),
   private val cloudRepository: FirestoreSyncRepository? = null,
+  private val userId: String? = null,
   private val accountDisplayName: String? = null,
   private val accountEmail: String? = null,
+  private val accountPhotoUrl: String? = null,
 ) : AndroidViewModel(application) {
 
-  private val preferencesRepository = UserPreferencesRepository(application)
+  private val preferencesRepository = UserPreferencesRepository(application, userId = userId)
   private val database = BudgetWiseDatabase.getInstance(application)
   private val repository = BudgetWiseRepository(database, preferencesRepository)
 
@@ -209,11 +232,23 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private val selectedMonthFlow = MutableStateFlow(YearMonthKey.current())
   private val activityFilterFlow = MutableStateFlow(ActivityFilterState())
   private val homePeriodScopeFlow = MutableStateFlow(HomePeriodScope.THIS_MONTH)
-  private val isCompletingOnboardingFlow = MutableStateFlow(false)
+  private val isUpdatingPhotoFlow = MutableStateFlow(false)
   private val cloudErrorMessageFlow = MutableStateFlow<String?>(null)
 
-  private val _snackbarMessages = MutableSharedFlow<String>(extraBufferCapacity = 8)
-  val snackbarMessages: SharedFlow<String> = _snackbarMessages.asSharedFlow()
+  private val _snackbarMessages = MutableSharedFlow<AppToastMessage>(extraBufferCapacity = 8)
+  val snackbarMessages: SharedFlow<AppToastMessage> = _snackbarMessages.asSharedFlow()
+
+  private fun emitSuccess(message: String) {
+    _snackbarMessages.tryEmit(AppToastMessage(message, ToastType.SUCCESS))
+  }
+
+  private fun emitError(message: String) {
+    _snackbarMessages.tryEmit(AppToastMessage(message, ToastType.ERROR))
+  }
+
+  private fun emitInfo(message: String) {
+    _snackbarMessages.tryEmit(AppToastMessage(message, ToastType.INFO))
+  }
 
   private val _isAppLocked = MutableStateFlow(false)
   val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
@@ -235,29 +270,48 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private var backgroundedAtMillis: Long? = null
 
   init {
-    BudgetWiseNotificationManager.ensureNotificationChannels(application)
+    runCatching { BudgetWiseNotificationManager.ensureNotificationChannels(application) }
+      .onFailure { Log.w(TAG, "Failed to initialize notification channels", it) }
     viewModelScope.launch {
-      val initialPrefs = preferencesRepository.userPreferences.first()
-      if (initialPrefs.appLockEnabled && !initialPrefs.pinHashRecord.isNullOrBlank()) {
-        _isAppLocked.value = true
-      }
-      if (cloudRepository != null) {
-        val seedName = accountDisplayName?.trim()?.takeIf { it.isNotBlank() }
-          ?: initialPrefs.displayName
-        cloudRepository.ensureProfileInitialized(
-          defaultDisplayName = seedName,
-          defaultCurrency = initialPrefs.preferredCurrency,
-        ).onSuccess { profile ->
-          preferencesRepository.updateDisplayName(profile.displayName)
-          preferencesRepository.updatePreferredCurrency(profile.preferredCurrency)
-        }.onFailure { err ->
-          cloudErrorMessageFlow.value = err.localizedMessage ?: "Unable to initialize cloud account."
+      try {
+        if (!userId.isNullOrBlank()) {
+          val lastActiveUid = runCatching { preferencesRepository.getLastActiveUserId() }.getOrNull()
+          if (lastActiveUid != null && lastActiveUid != userId) {
+            runCatching { repository.clearAllAlerts() }
+            runCatching { repository.clearChatHistory() }
+            runCatching { NotificationManagerCompat.from(getApplication()).cancelAll() }
+          }
+          runCatching { preferencesRepository.setLastActiveUserId(userId) }
         }
-      } else {
-        repository.ensureInitialDataSeeded()
+        val initialPrefs = preferencesRepository.userPreferences.first()
+        // Dual guardrail: never lock new accounts or accounts without a saved PIN hash
+        _isAppLocked.value = initialPrefs.appLockEnabled && !initialPrefs.pinHashRecord.isNullOrBlank()
+        if (cloudRepository != null) {
+          cloudRepository.ensureProfileInitialized(
+            googleDisplayName = accountDisplayName,
+            googlePhotoUrl = accountPhotoUrl,
+            defaultCurrency = initialPrefs.preferredCurrency,
+          ).onSuccess { profile ->
+            preferencesRepository.updateDisplayName(profile.displayName)
+            preferencesRepository.updatePreferredCurrency(profile.preferredCurrency)
+            if (profile.onboardingCompleted) {
+              preferencesRepository.markSpotlightTourCompleted()
+            }
+          }.onFailure { err ->
+            cloudErrorMessageFlow.value = err.localizedMessage ?: "Unable to initialize cloud account."
+          }
+          cloudRepository.verifyServerSync()
+        } else {
+          repository.ensureInitialDataSeeded()
+        }
+        syncDailyReminderSchedule(initialPrefs)
+        evaluateActiveAlertsOnStartup(initialPrefs)
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        Log.e(TAG, "Startup initialization failed gracefully", e)
+        cloudErrorMessageFlow.value = e.localizedMessage ?: "Startup sync paused."
       }
-      syncDailyReminderSchedule(initialPrefs)
-      evaluateActiveAlertsOnStartup(initialPrefs)
     }
   }
 
@@ -284,10 +338,10 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   private val cloudMetaInputsFlow = combine(
     profileSourceFlow,
     syncStatusSourceFlow,
-    isCompletingOnboardingFlow,
+    isUpdatingPhotoFlow,
     cloudErrorMessageFlow,
-  ) { profileState, syncStatus, isCompleting, cloudError ->
-    CloudMetaInputs(profileState, syncStatus, isCompleting, cloudError)
+  ) { profileState, syncStatus, isUpdatingPhoto, cloudError ->
+    CloudMetaInputs(profileState, syncStatus, isUpdatingPhoto, cloudError)
   }
 
   val uiState: StateFlow<BudgetWiseUiState> = combine(
@@ -296,19 +350,28 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     cloudMetaInputsFlow,
   ) { core, secondary, cloudMeta ->
     val isCloudProfileLoading = cloudRepository != null &&
+      cloudMeta.cloudErrorMessage == null &&
       (cloudMeta.profileState is CloudProfileState.Loading || cloudMeta.profileState is CloudProfileState.Missing)
-    val effectivePrefs = when (val ps = cloudMeta.profileState) {
-      is CloudProfileState.Loaded -> core.prefs.copy(
-        displayName = ps.profile.displayName,
-        preferredCurrency = ps.profile.preferredCurrency,
-        onboardingCompleted = ps.profile.onboardingCompleted,
+    val loadedProfile = (cloudMeta.profileState as? CloudProfileState.Loaded)?.profile
+    val effectivePrefs = if (loadedProfile != null) {
+      core.prefs.copy(
+        displayName = loadedProfile.displayName,
+        preferredCurrency = loadedProfile.preferredCurrency,
+        onboardingCompleted = loadedProfile.onboardingCompleted || core.prefs.hasCompletedTour,
+        hasCompletedTour = loadedProfile.onboardingCompleted || core.prefs.hasCompletedTour,
       )
-      else -> if (cloudRepository != null && !accountDisplayName.isNullOrBlank()) {
-        core.prefs.copy(displayName = accountDisplayName.trim())
-      } else {
-        core.prefs
-      }
+    } else if (cloudRepository != null && !accountDisplayName.isNullOrBlank()) {
+      core.prefs.copy(displayName = accountDisplayName.trim())
+    } else {
+      core.prefs
     }
+    val resolvedPhotoUrl = loadedProfile?.photoUrl ?: accountPhotoUrl.orEmpty()
+    val resolvedCustomPhotoBase64 = loadedProfile?.customPhotoBase64.orEmpty()
+    val shouldShowTour = cloudRepository != null &&
+      !isCloudProfileLoading &&
+      loadedProfile != null &&
+      !loadedProfile.onboardingCompleted &&
+      !core.prefs.hasCompletedTour
     val month = core.selectedMonth
     val transactions = core.transactions
     val monthTransactions = FinanceCalculator.filterTransactionsByMonth(transactions, month)
@@ -383,7 +446,11 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       unreadAlertCount = secondary.alerts.count { !it.isRead },
       syncStatus = cloudMeta.syncStatus,
       accountEmail = accountEmail,
-      isCompletingOnboarding = cloudMeta.isCompletingOnboarding,
+      profilePhotoUrl = resolvedPhotoUrl,
+      customPhotoBase64 = resolvedCustomPhotoBase64,
+      googlePhotoUrl = accountPhotoUrl?.takeIf { it.isNotBlank() },
+      isUpdatingPhoto = cloudMeta.isUpdatingPhoto,
+      shouldShowSpotlightTour = shouldShowTour,
       cloudErrorMessage = resolvedCloudError,
     )
   }.stateIn(
@@ -575,7 +642,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (cloudRepository != null) {
         val result = cloudRepository.saveTransaction(entity)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to sync transaction. Please try again.")
+          emitError("Unable to sync transaction. Please try again.")
           return@launch
         }
       } else {
@@ -583,7 +650,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       }
       val txMonth = YearMonthKey.fromEpochDay(dateEpochDay)
       selectedMonthFlow.value = txMonth
-      _snackbarMessages.tryEmit(
+      emitSuccess(
         if (existingId == 0L) "Transaction added" else "Transaction updated"
       )
       if (type == TransactionType.EXPENSE) {
@@ -601,13 +668,13 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (cloudRepository != null) {
         val result = cloudRepository.deleteTransaction(transaction)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to delete transaction. Please try again.")
+          emitError("Unable to delete transaction. Please try again.")
           return@launch
         }
       } else {
         repository.deleteTransaction(transaction)
       }
-      _snackbarMessages.tryEmit("Transaction deleted")
+      emitSuccess("Transaction deleted")
       if (transaction.type == TransactionType.EXPENSE) {
         evaluateBudgetThresholdForCategory(
           category = transaction.category,
@@ -637,14 +704,14 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       val created = if (cloudRepository != null) {
         val result = cloudRepository.saveBudget(budgetEntity)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to sync budget. Please try again.")
+          emitError("Unable to sync budget. Please try again.")
           return@launch
         }
         result.getOrDefault(false)
       } else {
         repository.saveBudget(budgetEntity)
       }
-      _snackbarMessages.tryEmit(
+      emitSuccess(
         if (created) "Budget created for $category" else "Budget updated for $category"
       )
       evaluateBudgetThresholdForCategory(
@@ -668,7 +735,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (cloudRepository != null) {
         val result = cloudRepository.deleteBudget(budgetEntity)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to delete budget. Please try again.")
+          emitError("Unable to delete budget. Please try again.")
           return@launch
         }
       } else {
@@ -677,7 +744,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       repository.clearAlertDedupePrefix(
         FinancialAlertEvaluator.budgetDedupePrefix(summary.category, summary.yearMonth)
       )
-      _snackbarMessages.tryEmit("Budget deleted")
+      emitSuccess("Budget deleted")
     }
   }
 
@@ -710,13 +777,13 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (cloudRepository != null) {
         val result = cloudRepository.saveGoal(entity)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to sync savings goal. Please try again.")
+          emitError("Unable to sync savings goal. Please try again.")
           return@launch
         }
       } else {
         repository.saveGoal(entity)
       }
-      _snackbarMessages.tryEmit(if (existing == null) "Savings goal created" else "Savings goal updated")
+      emitSuccess(if (existing == null) "Savings goal created" else "Savings goal updated")
       evaluateUpcomingGoalDeadlines(dispatchSystemNotification = true)
     }
   }
@@ -726,13 +793,13 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (cloudRepository != null) {
         val result = cloudRepository.deleteGoal(goal)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to delete savings goal. Please try again.")
+          emitError("Unable to delete savings goal. Please try again.")
           return@launch
         }
       } else {
         repository.deleteGoal(goal)
       }
-      _snackbarMessages.tryEmit("Savings goal deleted")
+      emitSuccess("Savings goal deleted")
     }
   }
 
@@ -754,7 +821,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
           dateEpochDay = dateEpochDay,
         )
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to record contribution. Please try again.")
+          emitError("Unable to record contribution. Please try again.")
           return@launch
         }
       } else {
@@ -766,7 +833,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
           dateEpochDay = dateEpochDay,
         )
       }
-      _snackbarMessages.tryEmit(
+      emitSuccess(
         if (isWithdrawal) "Savings adjustment recorded" else "Contribution added to goal"
       )
       if (!isWithdrawal && previousGoal != null) {
@@ -806,7 +873,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         it.name.trim().equals(cleanName, ignoreCase = true)
       }
       if (alreadyExists) {
-        _snackbarMessages.tryEmit("Category \"$cleanName\" already exists")
+        emitError("Category \"$cleanName\" already exists")
         return@launch
       }
       val (inferredIconKey, inferredColorHex) = CategoryVisualMatcher.inferIconAndColor(cleanName, type)
@@ -827,13 +894,13 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (cloudRepository != null) {
         val result = cloudRepository.addCategory(entity)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to sync new category. Please try again.")
+          emitError("Unable to sync new category. Please try again.")
           return@launch
         }
       } else {
         repository.addCategory(entity)
       }
-      _snackbarMessages.tryEmit("Category \"$cleanName\" added")
+      emitSuccess("Category \"$cleanName\" added")
     }
   }
 
@@ -851,7 +918,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
           it.id != category.id && it.name.trim().equals(targetName, ignoreCase = true)
         }
         if (duplicate) {
-          _snackbarMessages.tryEmit("Category \"$targetName\" already exists")
+          emitError("Category \"$targetName\" already exists")
           return@launch
         }
       }
@@ -863,7 +930,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
           newColorHex = newColorHex,
         )
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to update category. Please try again.")
+          emitError("Unable to update category. Please try again.")
           return@launch
         }
       } else {
@@ -874,7 +941,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
           newColorHex = newColorHex,
         )
       }
-      _snackbarMessages.tryEmit("Category updated")
+      emitSuccess("Category updated")
     }
   }
 
@@ -883,65 +950,161 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (cloudRepository != null) {
         val result = cloudRepository.deleteCategory(category)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to remove category. Please try again.")
+          emitError("Unable to remove category. Please try again.")
           return@launch
         }
       } else {
         repository.deleteCategory(category)
       }
-      _snackbarMessages.tryEmit("Category removed")
+      emitSuccess("Category removed")
     }
   }
 
-  // Preferences, Onboarding & Data Management
-  fun completeOnboarding(
-    displayName: String,
-    currencyCode: String,
-    loadDemoData: Boolean = false,
-  ) {
+  // Preferences, Spotlight Tour, Profile Photo & Data Management
+  fun completeSpotlightTour() {
     viewModelScope.launch {
-      isCompletingOnboardingFlow.value = true
-      cloudErrorMessageFlow.value = null
+      preferencesRepository.markSpotlightTourCompleted()
       if (cloudRepository != null) {
-        val result = cloudRepository.completeOnboarding(
-          displayName = displayName,
-          preferredCurrency = currencyCode,
-          loadDemoData = loadDemoData,
-        )
-        if (result.isFailure) {
-          cloudErrorMessageFlow.value =
-            result.exceptionOrNull()?.localizedMessage ?: "Unable to finish setup. Please try again."
-          isCompletingOnboardingFlow.value = false
-          return@launch
-        }
-      } else if (loadDemoData) {
-        repository.resetToDemonstrationData()
+        cloudRepository.markSpotlightTourCompleted()
       }
-      preferencesRepository.completeOnboarding(displayName, currencyCode)
-      isCompletingOnboardingFlow.value = false
     }
   }
 
-  fun skipOnboarding() {
-    val currentPrefs = uiState.value.preferences
-    completeOnboarding(
-      displayName = currentPrefs.displayName,
-      currencyCode = currentPrefs.preferredCurrency,
-      loadDemoData = false,
-    )
+  fun verifyCloudSync() {
+    val repo = cloudRepository ?: return
+    viewModelScope.launch {
+      repo.verifyServerSync()
+        .onSuccess {
+          emitSuccess("Cloud sync verified")
+        }
+        .onFailure {
+          emitInfo("Offline — changes will sync when back online")
+        }
+    }
+  }
+
+  fun saveCroppedProfilePhoto(
+    sourceBitmap: Bitmap,
+    scale: Float,
+    offsetXNorm: Float,
+    offsetYNorm: Float,
+    onFinished: (Boolean) -> Unit = {},
+  ) {
+    val repo = cloudRepository
+    if (repo == null) {
+      emitError("Sign in to sync a custom profile photo")
+      onFinished(false)
+      return
+    }
+    viewModelScope.launch {
+      isUpdatingPhotoFlow.value = true
+      val encoded = withContext(Dispatchers.IO) {
+        runCatching {
+          ProfilePhotoProcessor.cropAndEncodeCircularAvatarToBase64(
+            source = sourceBitmap,
+            scale = scale,
+            offsetXNorm = offsetXNorm,
+            offsetYNorm = offsetYNorm,
+          )
+        }.getOrNull()
+      }
+      if (encoded.isNullOrBlank()) {
+        isUpdatingPhotoFlow.value = false
+        emitError("Unable to process selected image. Please try another photo.")
+        onFinished(false)
+        return@launch
+      }
+      var saved = false
+      repo.updateCustomPhotoBase64(encoded)
+        .onSuccess {
+          saved = true
+          emitSuccess("Profile photo updated")
+        }
+        .onFailure {
+          emitError("Unable to save profile photo. Please try again.")
+        }
+      isUpdatingPhotoFlow.value = false
+      onFinished(saved)
+    }
+  }
+
+  fun updateProfilePhotoFromUri(uri: Uri) {
+    val repo = cloudRepository
+    if (repo == null) {
+      emitError("Sign in to sync a custom profile photo")
+      return
+    }
+    viewModelScope.launch {
+      isUpdatingPhotoFlow.value = true
+      val encoded = withContext(Dispatchers.IO) {
+        runCatching {
+          ProfilePhotoProcessor.encodePickedUriToBase64Jpeg(getApplication(), uri)
+        }.getOrNull()
+      }
+      if (encoded.isNullOrBlank()) {
+        isUpdatingPhotoFlow.value = false
+        emitError("Unable to read selected image. Please try another photo.")
+        return@launch
+      }
+      repo.updateCustomPhotoBase64(encoded)
+        .onSuccess {
+          emitSuccess("Profile photo updated")
+        }
+        .onFailure {
+          emitError("Unable to save profile photo. Please try again.")
+        }
+      isUpdatingPhotoFlow.value = false
+    }
+  }
+
+  fun useGoogleProfilePhoto() {
+    val repo = cloudRepository ?: return
+    viewModelScope.launch {
+      isUpdatingPhotoFlow.value = true
+      repo.revertToGooglePhoto(accountPhotoUrl)
+        .onSuccess {
+          emitSuccess("Switched to Google account photo")
+        }
+        .onFailure {
+          emitError("Unable to restore Google photo. Please try again.")
+        }
+      isUpdatingPhotoFlow.value = false
+    }
+  }
+
+  fun removeProfilePhoto() {
+    val repo = cloudRepository ?: return
+    viewModelScope.launch {
+      isUpdatingPhotoFlow.value = true
+      repo.removeProfilePhoto()
+        .onSuccess {
+          emitSuccess("Profile photo removed")
+        }
+        .onFailure {
+          emitError("Unable to remove profile photo. Please try again.")
+        }
+      isUpdatingPhotoFlow.value = false
+    }
   }
 
   fun updateDisplayName(name: String) {
     viewModelScope.launch {
+      val cleanName = name.trim().take(60)
+      if (cleanName.isEmpty()) return@launch
       if (cloudRepository != null) {
-        val result = cloudRepository.updateDisplayName(name)
+        val result = cloudRepository.updateDisplayName(cleanName)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to sync display name. Please try again.")
+          emitError("Unable to sync display name. Please try again.")
           return@launch
         }
+        runCatching {
+          Firebase.auth.currentUser?.updateProfile(
+            userProfileChangeRequest { displayName = cleanName }
+          )
+        }
       }
-      preferencesRepository.updateDisplayName(name)
-      _snackbarMessages.tryEmit("Display name updated")
+      preferencesRepository.updateDisplayName(cleanName)
+      emitSuccess("Display name updated")
     }
   }
 
@@ -950,12 +1113,12 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (cloudRepository != null) {
         val result = cloudRepository.updatePreferredCurrency(currencyCode)
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to sync currency. Please try again.")
+          emitError("Unable to sync currency. Please try again.")
           return@launch
         }
       }
       preferencesRepository.updatePreferredCurrency(currencyCode)
-      _snackbarMessages.tryEmit("Currency updated to $currencyCode")
+      emitSuccess("Currency updated to $currencyCode")
     }
   }
 
@@ -978,29 +1141,12 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     }
   }
 
-  fun resetDemonstrationData() {
-    viewModelScope.launch {
-      if (cloudRepository != null) {
-        val result = cloudRepository.resetToDemonstrationData()
-        if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to restore demonstration data. Please try again.")
-          return@launch
-        }
-        repository.clearAllAlerts()
-      } else {
-        repository.resetToDemonstrationData()
-      }
-      selectedMonthFlow.value = YearMonthKey.current()
-      _snackbarMessages.tryEmit("Demonstration dataset restored")
-    }
-  }
-
   fun clearAllRecords() {
     viewModelScope.launch {
       if (cloudRepository != null) {
         val result = cloudRepository.clearAllFinancialRecords()
         if (result.isFailure) {
-          _snackbarMessages.tryEmit("Unable to clear financial records. Please try again.")
+          emitError("Unable to clear financial records. Please try again.")
           return@launch
         }
         repository.clearAllAlerts()
@@ -1008,20 +1154,28 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       } else {
         repository.clearAllUserData()
       }
-      _snackbarMessages.tryEmit("All financial records cleared")
+      emitSuccess("All financial records cleared")
     }
   }
 
-  fun prepareForSignOut() {
+  suspend fun prepareForSignOut() {
     activeChatJob?.cancel()
     activeChatJob = null
     chatStreamingStateFlow.value = ChatStreamingState.Idle
     _isAppLocked.value = false
+    backgroundedAtMillis = null
+    cloudRepository?.detachAllListeners()
+    withContext(Dispatchers.IO) {
+      runCatching { repository.clearAllAlerts() }
+      runCatching { repository.clearChatHistory() }
+      runCatching { NotificationManagerCompat.from(getApplication()).cancelAll() }
+      runCatching { preferencesRepository.setLastActiveUserId(null) }
+    }
   }
 
-  fun notifyUser(message: String) {
+  fun notifyUser(message: String, type: ToastType = ToastType.SUCCESS) {
     if (message.isNotBlank()) {
-      _snackbarMessages.tryEmit(message)
+      _snackbarMessages.tryEmit(AppToastMessage(message, type))
     }
   }
 
@@ -1045,7 +1199,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     val snapshot = pendingExportSnapshot
     pendingExportSnapshot = null
     if (snapshot == null) {
-      _snackbarMessages.tryEmit("Export expired. Please try again.")
+      emitError("Export expired. Please try again.")
       return
     }
     val (data, format) = snapshot
@@ -1062,11 +1216,11 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       }
       _isExportingReport.value = false
       result.onSuccess {
-        _snackbarMessages.tryEmit("Saved $fileName")
+        emitSuccess("Saved $fileName")
         onCompleted()
       }.onFailure { err ->
         Log.e("BudgetWiseExport", "Failed to save $fileName to SAF URI", err)
-        _snackbarMessages.tryEmit("Export failed: ${err.localizedMessage ?: "Unable to write file"}")
+        emitError("Export failed: ${err.localizedMessage ?: "Unable to write file"}")
       }
     }
   }
@@ -1094,11 +1248,11 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       }
       _isExportingReport.value = false
       result.onSuccess {
-        _snackbarMessages.tryEmit("Saved to Downloads/BudgetWise/$fileName")
+        emitSuccess("Saved to Downloads/BudgetWise/$fileName")
         onCompleted()
       }.onFailure { err ->
         Log.e("BudgetWiseExport", "Failed to save $fileName to Downloads", err)
-        _snackbarMessages.tryEmit("Export failed: ${err.localizedMessage ?: "Unable to save file"}")
+        emitError("Export failed: ${err.localizedMessage ?: "Unable to save file"}")
       }
     }
   }
@@ -1132,7 +1286,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         onReady(outFile, format, data.periodLabel)
       }.onFailure { err ->
         Log.e("BudgetWiseExport", "Failed to generate shareable report $fileName", err)
-        _snackbarMessages.tryEmit("Share failed: ${err.localizedMessage ?: "Unable to prepare file"}")
+        emitError("Share failed: ${err.localizedMessage ?: "Unable to prepare file"}")
       }
     }
   }
@@ -1179,7 +1333,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       val record = withContext(Dispatchers.Default) { PinSecurityManager.createPinRecord(pin) }
       preferencesRepository.enableAppLock(record, enableBiometric)
       _isAppLocked.value = false
-      _snackbarMessages.tryEmit("App Lock enabled")
+      emitSuccess("App Lock enabled")
     }
   }
 
@@ -1188,14 +1342,14 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     viewModelScope.launch {
       val record = withContext(Dispatchers.Default) { PinSecurityManager.createPinRecord(pin) }
       preferencesRepository.updatePin(record)
-      _snackbarMessages.tryEmit("PIN updated")
+      emitSuccess("PIN updated")
     }
   }
 
   fun setBiometricUnlockEnabled(enabled: Boolean) {
     viewModelScope.launch {
       preferencesRepository.setBiometricUnlockEnabled(enabled)
-      _snackbarMessages.tryEmit(
+      emitSuccess(
         if (enabled) "Biometric unlock enabled" else "Biometric unlock disabled"
       )
     }
@@ -1205,7 +1359,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     viewModelScope.launch {
       preferencesRepository.disableAppLock()
       _isAppLocked.value = false
-      _snackbarMessages.tryEmit("App Lock disabled")
+      emitSuccess("App Lock disabled")
     }
   }
 
@@ -1248,7 +1402,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       val record = withContext(Dispatchers.Default) { PinSecurityManager.createPinRecord(newPin) }
       preferencesRepository.updatePin(record)
       _isAppLocked.value = false
-      _snackbarMessages.tryEmit("PIN reset successfully")
+      emitSuccess("PIN reset successfully")
     }
   }
 
@@ -1260,7 +1414,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       repository.clearAllUserData()
       preferencesRepository.disableAppLock()
       _isAppLocked.value = false
-      _snackbarMessages.tryEmit("App Lock removed and local records erased")
+      emitSuccess("App Lock removed and local records erased")
     }
   }
 
@@ -1361,7 +1515,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         newTitle = cleanTitle,
         isManual = true,
       )
-      _snackbarMessages.tryEmit("Chat renamed")
+      emitSuccess("Chat renamed")
     }
   }
 
@@ -1375,7 +1529,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     }
     viewModelScope.launch {
       repository.deleteChatSession(sessionId)
-      _snackbarMessages.tryEmit("Chat deleted")
+      emitSuccess("Chat deleted")
     }
   }
 
@@ -1398,7 +1552,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         activeChatSelectionFlow.value = ActiveChatSelection.NewDraft
         repository.deleteChatSession(activeSession.id)
       }
-      _snackbarMessages.tryEmit("Message deleted")
+      emitSuccess("Message deleted")
     }
   }
 
@@ -1468,7 +1622,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
     activeChatSelectionFlow.value = ActiveChatSelection.NewDraft
     clearChatJob = viewModelScope.launch {
       repository.clearChatHistory()
-      _snackbarMessages.tryEmit("Chat history cleared")
+      emitSuccess("Chat history cleared")
     }
   }
 
@@ -1570,7 +1724,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         val prefs = preferencesRepository.userPreferences.first()
         evaluateAllCurrentMonthBudgets(prefs, dispatchSystemNotification = false)
       }
-      _snackbarMessages.tryEmit(
+      emitSuccess(
         if (enabled) "Budget threshold alerts enabled" else "Budget threshold alerts paused"
       )
     }
@@ -1584,7 +1738,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (enabled) {
         evaluateUpcomingGoalDeadlines(dispatchSystemNotification = false)
       }
-      _snackbarMessages.tryEmit(
+      emitSuccess(
         if (enabled) "Savings goal alerts enabled" else "Savings goal alerts paused"
       )
     }
@@ -1599,7 +1753,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
         prefs.dailyReminderHour,
         prefs.dailyReminderMinute,
       )
-      _snackbarMessages.tryEmit(
+      emitSuccess(
         if (enabled) "Daily reminder scheduled for $timeLabel" else "Daily reminder turned off"
       )
     }
@@ -1613,7 +1767,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       if (prefs.budgetAlertsEnabled) {
         evaluateAllCurrentMonthBudgets(prefs, dispatchSystemNotification = false)
       }
-      _snackbarMessages.tryEmit("Budget warning threshold set to $sanitized%")
+      emitSuccess("Budget warning threshold set to $sanitized%")
     }
   }
 
@@ -1623,7 +1777,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       val prefs = preferencesRepository.userPreferences.first()
       syncDailyReminderSchedule(prefs)
       val formatted = AlertThresholdDefaults.formatReminderTime(hour24, minute)
-      _snackbarMessages.tryEmit("Daily reminder time set to $formatted")
+      emitSuccess("Daily reminder time set to $formatted")
     }
   }
 
@@ -1660,7 +1814,7 @@ class BudgetWiseViewModel @JvmOverloads constructor(
   fun clearAllAlerts() {
     viewModelScope.launch {
       repository.clearAllAlerts()
-      _snackbarMessages.tryEmit("Notifications cleared")
+      emitSuccess("Notifications cleared")
     }
   }
 
@@ -1801,15 +1955,22 @@ class BudgetWiseViewModel @JvmOverloads constructor(
       userId: String,
       accountDisplayName: String?,
       accountEmail: String?,
+      accountPhotoUrl: String? = null,
     ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
       @Suppress("UNCHECKED_CAST")
       override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        val cloudRepo = FirestoreSyncRepository(db = firestore, userId = userId)
+        val cloudRepo = FirestoreSyncRepository(
+          db = firestore,
+          userId = userId,
+          appContext = application,
+        )
         return BudgetWiseViewModel(
           application = application,
           cloudRepository = cloudRepo,
+          userId = userId,
           accountDisplayName = accountDisplayName,
           accountEmail = accountEmail,
+          accountPhotoUrl = accountPhotoUrl,
         ) as T
       }
     }

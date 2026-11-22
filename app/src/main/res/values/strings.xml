@@ -78,9 +78,9 @@
     <string name="help_assistant_title">Still have a question?</string>
     <string name="help_assistant_subtitle">Ask the BudgetWise Assistant about your spending, budgets, or how to use the app.</string>
     <string name="help_assistant_cta">Ask BudgetWise Assistant</string>
-    <string name="help_replay_welcome_title">Replay Welcome Guide</string>
-    <string name="help_replay_welcome_subtitle">Revisit the quick tour of BudgetWise features</string>
-    <string name="help_replay_welcome_cd">Replay Welcome Guide</string>
+    <string name="help_replay_welcome_title">Replay App Tour</string>
+    <string name="help_replay_welcome_subtitle">Revisit the interactive spotlight tour on your Home dashboard</string>
+    <string name="help_replay_welcome_cd">Replay App Tour</string>
 
     <!-- Google Sign-In & Multi-Device Sync -->
     <string name="sign_in_headline">Take control of your money, on every phone</string>
@@ -95,40 +95,44 @@
     <string name="sign_in_feature_private_desc">Only your Google account can read your ledger. PIN lock stays on-device.</string>
     <string name="sign_in_footer_note">BudgetWise never asks for bank passwords or card numbers.</string>
 
-    <!-- Settings Account & Sync -->
+    <!-- Settings Account, Sync & Profile Photo -->
     <string name="settings_cloud_account_title">Cloud Sync Account</string>
-    <string name="settings_sync_status_synced">Synced to Cloud</string>
+    <string name="settings_sync_status_synced">Cloud Synced</string>
     <string name="settings_sync_status_syncing">Syncing…</string>
-    <string name="settings_sync_status_offline">Offline · Cached locally</string>
-    <string name="settings_sync_status_error">Sync needs attention</string>
+    <string name="settings_sync_status_offline">Offline</string>
+    <string name="settings_sync_status_error">Sync Issue · Tap to retry</string>
+    <string name="settings_sync_tap_hint">Tap status to verify sync</string>
     <string name="settings_sign_out_action">Sign Out</string>
     <string name="settings_sign_out_confirm_title">Sign Out of BudgetWise?</string>
     <string name="settings_sign_out_confirm_message">Your synced financial records remain safely backed up to your Google account. You can sign back in on this phone or any other device anytime.</string>
     <string name="settings_footer_cloud_badge">Private Cloud Sync · Offline Ready</string>
+    <string name="settings_avatar_edit_cd">Change profile photo</string>
+    <string name="settings_photo_dialog_title">Profile Photo</string>
+    <string name="settings_photo_dialog_subtitle">Your avatar syncs across all devices signed in with this Google account.</string>
+    <string name="settings_photo_choose_gallery">Choose Photo</string>
+    <string name="settings_photo_use_google">Use Google Account Photo</string>
+    <string name="settings_photo_remove">Remove Profile Photo</string>
+    <string name="settings_photo_updating">Updating photo…</string>
+    <string name="crop_photo_title">Crop Profile Photo</string>
+    <string name="crop_photo_subtitle">Drag and pinch to adjust</string>
+    <string name="crop_photo_save">Save Photo</string>
+    <string name="crop_photo_saving">Saving…</string>
+    <string name="crop_photo_read_error">Unable to read selected image. Please try another photo.</string>
 
-    <!-- Multi-Step Welcome Guide -->
-    <string name="welcome_step_counter">Step %1$d of %2$d</string>
+    <!-- Live In-App Spotlight Tour -->
+    <string name="spotlight_step_counter">%1$d of %2$d</string>
     <string name="welcome_skip">Skip</string>
     <string name="welcome_back">Back</string>
     <string name="welcome_next">Next</string>
     <string name="welcome_done">Done</string>
-    <string name="welcome_get_started">Get Started</string>
-    <string name="welcome_saving">Setting up your ledger…</string>
-    <string name="welcome_step1_title">Welcome to BudgetWise</string>
-    <string name="welcome_step1_body">Track every peso, dollar, or yen with complete clarity. Your transactions, budgets, goals, and categories sync privately across all your phones—and stay available offline.</string>
-    <string name="welcome_step2_title">Log Expenses in Seconds</string>
-    <string name="welcome_step2_body">Record Cash, GCash, Maya, and card payments across 30+ color-coded categories. Tap the built-in calculator icon inside any amount field to split bills or add up receipts on the spot.</string>
-    <string name="welcome_step3_title">Smart Budgets, Goals &amp; Insights</string>
-    <string name="welcome_step3_body">Set monthly category limits with early warning alerts, build independent Savings Goals without skewing cash flow, and explore visual charts or ask the BudgetWise Assistant.</string>
-    <string name="welcome_step4_title">Personalize Your Profile</string>
-    <string name="welcome_step4_body">Choose how BudgetWise greets you and pick your primary currency. Both sync automatically across your devices.</string>
-    <string name="welcome_step4_name_label">Display Name</string>
-    <string name="welcome_step4_name_placeholder">Enter your name</string>
-    <string name="welcome_step4_currency_label">Preferred Currency</string>
-    <string name="welcome_step5_title">Choose How to Start</string>
-    <string name="welcome_step5_body">Start with a clean slate or explore sample data first. You can reset or clear records anytime in Settings.</string>
-    <string name="welcome_option_fresh_title">Start Fresh</string>
-    <string name="welcome_option_fresh_desc">Clean ledger with 30 ready-to-use income &amp; expense categories. Best when you are ready to log real transactions right away.</string>
-    <string name="welcome_option_demo_title">Explore Demonstration Data</string>
-    <string name="welcome_option_demo_desc">Pre-load sample transactions, monthly budgets, and savings goals so you can test charts, alerts, and insights immediately.</string>
+    <string name="spotlight_step1_title">Log Transactions Fast</string>
+    <string name="spotlight_step1_body">Tap + anytime to record income or expenses with the built-in amount calculator.</string>
+    <string name="spotlight_step2_title">BudgetWise AI Assistant</string>
+    <string name="spotlight_step2_body">Chat with your private AI assistant to check budgets, trends, or savings advice.</string>
+    <string name="spotlight_step3_title">Live Net Cash Flow</string>
+    <string name="spotlight_step3_body">Your monthly and all-time cash flow and savings rate update as you log entries.</string>
+    <string name="spotlight_step4_title">Alerts, Privacy &amp; Settings</string>
+    <string name="spotlight_step4_body">Check alerts, tap the eye to hide balances, or open Settings for currency and PIN lock.</string>
+    <string name="spotlight_step5_title">Explore Your Workspace</string>
+    <string name="spotlight_step5_body">Switch tabs to inspect Activity, manage Budgets, grow Goals, and explore Insights.</string>
 </resources>

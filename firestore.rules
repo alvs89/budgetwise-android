@@ -42,7 +42,9 @@ service cloud.firestore {
     function isValidUserProfile(data, userId) {
       return data.keys().hasOnly([
         'userId', 'displayName', 'preferredCurrency',
-        'onboardingCompleted', 'initializedData', 'createdAt', 'updatedAt'
+        'onboardingCompleted', 'initializedData',
+        'photoUrl', 'customPhotoBase64',
+        'createdAt', 'updatedAt'
       ])
       && data.keys().hasAll([
         'userId', 'displayName', 'preferredCurrency',
@@ -53,6 +55,8 @@ service cloud.firestore {
       && isValidCurrency(data.preferredCurrency)
       && data.onboardingCompleted is bool
       && data.initializedData is bool
+      && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1024))
+      && (!('customPhotoBase64' in data) || (data.customPhotoBase64 is string && data.customPhotoBase64.size() <= 250000))
       && data.createdAt is timestamp && data.createdAt <= request.time
       && data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -172,7 +176,8 @@ service cloud.firestore {
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'preferredCurrency', 'onboardingCompleted', 'initializedData', 'updatedAt'
+          'displayName', 'preferredCurrency', 'onboardingCompleted', 'initializedData',
+          'photoUrl', 'customPhotoBase64', 'updatedAt'
         ]);
       allow delete: if isOwner(userId);
 

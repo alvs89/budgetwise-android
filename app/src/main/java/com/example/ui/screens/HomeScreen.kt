@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -64,9 +65,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -89,6 +93,7 @@ import com.example.ui.components.MaskedCurrencyText
 import com.example.ui.components.MonthSelectorBar
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.SpendingTrendLineChart
+import com.example.ui.components.SpotlightTargetId
 import com.example.ui.components.SwipeToRevealDeleteRow
 import com.example.ui.components.TopExpenseCategoriesOverview
 import com.example.ui.components.TransactionRowItem
@@ -117,8 +122,16 @@ fun HomeScreen(
   dashboardRevealed: Boolean = true,
   hasPlayedEntrance: Boolean = true,
   onEntranceAnimationPlayed: () -> Unit = {},
+  scrollToTopSignal: Int = 0,
+  onRegisterSpotlightBounds: (SpotlightTargetId, Rect) -> Unit = { _, _ -> },
   modifier: Modifier = Modifier,
 ) {
+  val listState = rememberLazyListState()
+  LaunchedEffect(scrollToTopSignal) {
+    if (scrollToTopSignal > 0) {
+      listState.scrollToItem(0)
+    }
+  }
   val financeColors = LocalFinanceColors.current
   val currency = uiState.preferences.preferredCurrency
   val isAllTime = uiState.homePeriodScope == HomePeriodScope.ALL_TIME
@@ -158,6 +171,7 @@ fun HomeScreen(
     contentAlignment = Alignment.TopCenter,
   ) {
     LazyColumn(
+      state = listState,
       modifier = Modifier
         .widthIn(max = 760.dp)
         .fillMaxSize(),
@@ -198,6 +212,13 @@ fun HomeScreen(
             Row(
               horizontalArrangement = Arrangement.spacedBy(4.dp),
               verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.onGloballyPositioned { coords ->
+                if (coords.isAttached) {
+                  runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                    onRegisterSpotlightBounds(SpotlightTargetId.TOP_ACTION_BAR, rect)
+                  }
+                }
+              },
             ) {
               val isHidden = LocalIsBalanceHidden.current
               Surface(
@@ -343,6 +364,13 @@ fun HomeScreen(
           shape = MaterialTheme.shapes.large,
           modifier = Modifier
             .fillMaxWidth()
+            .onGloballyPositioned { coords ->
+              if (coords.isAttached) {
+                runCatching { coords.boundsInRoot() }.getOrNull()?.let { rect ->
+                  onRegisterSpotlightBounds(SpotlightTargetId.NET_CASH_FLOW_CARD, rect)
+                }
+              }
+            }
             .staggeredEntrance(
               revealed = dashboardRevealed,
               alreadyPlayed = hasPlayedEntrance,

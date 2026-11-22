@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -12,7 +13,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.domain.AlertThresholdDefaults
 import com.example.domain.CurrencyOption
 import com.example.domain.ThemeMode
+import java.io.IOException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "budgetwise_prefs")
@@ -22,6 +26,7 @@ data class UserPreferences(
   val preferredCurrency: String = CurrencyOption.PHP.code,
   val themeMode: ThemeMode = ThemeMode.SYSTEM,
   val onboardingCompleted: Boolean = false,
+  val hasCompletedTour: Boolean = false,
   val hasSeededInitialData: Boolean = false,
   val isBalanceHidden: Boolean = false,
   val appLockEnabled: Boolean = false,
@@ -37,174 +42,224 @@ data class UserPreferences(
   val dailyReminderMinute: Int = AlertThresholdDefaults.DEFAULT_REMINDER_MINUTE,
 )
 
-class UserPreferencesRepository(private val context: Context) {
+/**
+ * Device-local Jetpack DataStore preferences repository.
+ *
+ * Security-sensitive PIN lock keys and Spotlight Tour completion are scoped per authenticated
+ * [userId] so a newly signed-in Google account always starts with PIN lock OFF (`false`) and
+ * never inherits another account's lock state or tour state.
+ */
+class UserPreferencesRepository(
+  private val context: Context,
+  private val userId: String? = null,
+) {
+  private val uidSuffix: String = userId?.takeIf { it.isNotBlank() }?.let { "_$it" }.orEmpty()
 
-  private object Keys {
-    val DISPLAY_NAME = stringPreferencesKey("display_name")
-    val PREFERRED_CURRENCY = stringPreferencesKey("preferred_currency")
-    val THEME_MODE = stringPreferencesKey("theme_mode")
-    val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
-    val HAS_SEEDED_INITIAL_DATA = booleanPreferencesKey("has_seeded_initial_data")
-    val IS_BALANCE_HIDDEN = booleanPreferencesKey("is_balance_hidden")
-    val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
-    val BIOMETRIC_UNLOCK_ENABLED = booleanPreferencesKey("biometric_unlock_enabled")
-    val PIN_HASH_RECORD = stringPreferencesKey("pin_hash_record")
-    val FAILED_PIN_ATTEMPTS = intPreferencesKey("failed_pin_attempts")
-    val PIN_LOCKED_UNTIL_MILLIS = longPreferencesKey("pin_locked_until_millis")
-    val BUDGET_ALERTS_ENABLED = booleanPreferencesKey("budget_alerts_enabled")
-    val GOAL_ALERTS_ENABLED = booleanPreferencesKey("goal_alerts_enabled")
-    val DAILY_REMINDER_ENABLED = booleanPreferencesKey("daily_reminder_enabled")
-    val BUDGET_WARNING_THRESHOLD_PERCENT = intPreferencesKey("budget_warning_threshold_percent")
-    val DAILY_REMINDER_HOUR = intPreferencesKey("daily_reminder_hour")
-    val DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
-  }
+  private val displayNameKey = stringPreferencesKey("display_name")
+  private val preferredCurrencyKey = stringPreferencesKey("preferred_currency")
+  private val themeModeKey = stringPreferencesKey("theme_mode")
+  private val onboardingCompletedKey = booleanPreferencesKey("onboarding_completed$uidSuffix")
+  private val hasCompletedTourKey = booleanPreferencesKey("spotlight_tour_completed$uidSuffix")
+  private val hasSeededInitialDataKey = booleanPreferencesKey("has_seeded_initial_data")
+  private val isBalanceHiddenKey = booleanPreferencesKey("is_balance_hidden$uidSuffix")
+  private val appLockEnabledKey = booleanPreferencesKey("app_lock_enabled$uidSuffix")
+  private val biometricUnlockEnabledKey = booleanPreferencesKey("biometric_unlock_enabled$uidSuffix")
+  private val pinHashRecordKey = stringPreferencesKey("pin_hash_record$uidSuffix")
+  private val failedPinAttemptsKey = intPreferencesKey("failed_pin_attempts$uidSuffix")
+  private val pinLockedUntilMillisKey = longPreferencesKey("pin_locked_until_millis$uidSuffix")
+  private val lastActiveUserIdKey = stringPreferencesKey("last_active_user_id")
+  private val budgetAlertsEnabledKey = booleanPreferencesKey("budget_alerts_enabled$uidSuffix")
+  private val goalAlertsEnabledKey = booleanPreferencesKey("goal_alerts_enabled$uidSuffix")
+  private val dailyReminderEnabledKey = booleanPreferencesKey("daily_reminder_enabled$uidSuffix")
+  private val budgetWarningThresholdKey = intPreferencesKey("budget_warning_threshold_percent$uidSuffix")
+  private val dailyReminderHourKey = intPreferencesKey("daily_reminder_hour$uidSuffix")
+  private val dailyReminderMinuteKey = intPreferencesKey("daily_reminder_minute$uidSuffix")
 
-  val userPreferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
-    val rawTheme = prefs[Keys.THEME_MODE] ?: ThemeMode.SYSTEM.name
+  val userPreferences: Flow<UserPreferences> = context.dataStore.data
+    .catch { err ->
+      if (err is IOException) {
+        emit(emptyPreferences())
+      } else {
+        throw err
+      }
+    }
+    .map { prefs ->
+    val rawTheme = prefs[themeModeKey] ?: ThemeMode.SYSTEM.name
     val themeMode = runCatching { ThemeMode.valueOf(rawTheme) }.getOrDefault(ThemeMode.SYSTEM)
-    val rawThreshold = prefs[Keys.BUDGET_WARNING_THRESHOLD_PERCENT]
+    val rawThreshold = prefs[budgetWarningThresholdKey]
       ?: AlertThresholdDefaults.DEFAULT_WARNING_THRESHOLD_PERCENT
+    val storedPinHash = prefs[pinHashRecordKey]?.takeIf { it.isNotBlank() }
+    // Dual guardrail: PIN lock is strictly OFF unless explicitly enabled AND a valid PIN hash exists
+    val effectiveAppLockEnabled = (prefs[appLockEnabledKey] ?: false) && storedPinHash != null
     UserPreferences(
-      displayName = prefs[Keys.DISPLAY_NAME]?.takeIf { it.isNotBlank() } ?: "Alex",
-      preferredCurrency = prefs[Keys.PREFERRED_CURRENCY] ?: CurrencyOption.PHP.code,
+      displayName = prefs[displayNameKey]?.takeIf { it.isNotBlank() } ?: "Alex",
+      preferredCurrency = prefs[preferredCurrencyKey] ?: CurrencyOption.PHP.code,
       themeMode = themeMode,
-      onboardingCompleted = prefs[Keys.ONBOARDING_COMPLETED] ?: false,
-      hasSeededInitialData = prefs[Keys.HAS_SEEDED_INITIAL_DATA] ?: false,
-      isBalanceHidden = prefs[Keys.IS_BALANCE_HIDDEN] ?: false,
-      appLockEnabled = prefs[Keys.APP_LOCK_ENABLED] ?: false,
-      biometricUnlockEnabled = prefs[Keys.BIOMETRIC_UNLOCK_ENABLED] ?: false,
-      pinHashRecord = prefs[Keys.PIN_HASH_RECORD],
-      failedPinAttempts = prefs[Keys.FAILED_PIN_ATTEMPTS] ?: 0,
-      pinLockedUntilMillis = prefs[Keys.PIN_LOCKED_UNTIL_MILLIS] ?: 0L,
-      budgetAlertsEnabled = prefs[Keys.BUDGET_ALERTS_ENABLED] ?: true,
-      goalAlertsEnabled = prefs[Keys.GOAL_ALERTS_ENABLED] ?: true,
-      dailyReminderEnabled = prefs[Keys.DAILY_REMINDER_ENABLED] ?: false,
+      onboardingCompleted = prefs[onboardingCompletedKey] ?: false,
+      hasCompletedTour = prefs[hasCompletedTourKey] ?: false,
+      hasSeededInitialData = prefs[hasSeededInitialDataKey] ?: false,
+      isBalanceHidden = prefs[isBalanceHiddenKey] ?: false,
+      appLockEnabled = effectiveAppLockEnabled,
+      biometricUnlockEnabled = effectiveAppLockEnabled && (prefs[biometricUnlockEnabledKey] ?: false),
+      pinHashRecord = storedPinHash,
+      failedPinAttempts = prefs[failedPinAttemptsKey] ?: 0,
+      pinLockedUntilMillis = prefs[pinLockedUntilMillisKey] ?: 0L,
+      budgetAlertsEnabled = prefs[budgetAlertsEnabledKey] ?: true,
+      goalAlertsEnabled = prefs[goalAlertsEnabledKey] ?: true,
+      dailyReminderEnabled = prefs[dailyReminderEnabledKey] ?: false,
       budgetWarningThresholdPercent = AlertThresholdDefaults.sanitizeThreshold(rawThreshold),
-      dailyReminderHour = (prefs[Keys.DAILY_REMINDER_HOUR] ?: AlertThresholdDefaults.DEFAULT_REMINDER_HOUR).coerceIn(0, 23),
-      dailyReminderMinute = (prefs[Keys.DAILY_REMINDER_MINUTE] ?: AlertThresholdDefaults.DEFAULT_REMINDER_MINUTE).coerceIn(0, 59),
+      dailyReminderHour = (prefs[dailyReminderHourKey] ?: AlertThresholdDefaults.DEFAULT_REMINDER_HOUR).coerceIn(0, 23),
+      dailyReminderMinute = (prefs[dailyReminderMinuteKey] ?: AlertThresholdDefaults.DEFAULT_REMINDER_MINUTE).coerceIn(0, 59),
     )
   }
 
   suspend fun updateBalanceHidden(hidden: Boolean) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.IS_BALANCE_HIDDEN] = hidden
+      prefs[isBalanceHiddenKey] = hidden
     }
   }
 
   suspend fun updateDisplayName(name: String) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.DISPLAY_NAME] = name.trim().ifBlank { "Alex" }
+      prefs[displayNameKey] = name.trim().ifBlank { "Alex" }
     }
   }
 
   suspend fun updatePreferredCurrency(currencyCode: String) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.PREFERRED_CURRENCY] = CurrencyOption.fromCode(currencyCode).code
+      prefs[preferredCurrencyKey] = CurrencyOption.fromCode(currencyCode).code
     }
   }
 
   suspend fun updateThemeMode(mode: ThemeMode) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.THEME_MODE] = mode.name
+      prefs[themeModeKey] = mode.name
+    }
+  }
+
+  suspend fun markSpotlightTourCompleted() {
+    context.dataStore.edit { prefs ->
+      prefs[hasCompletedTourKey] = true
+      prefs[onboardingCompletedKey] = true
     }
   }
 
   suspend fun completeOnboarding(displayName: String, currencyCode: String) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.DISPLAY_NAME] = displayName.trim().ifBlank { "Alex" }
-      prefs[Keys.PREFERRED_CURRENCY] = CurrencyOption.fromCode(currencyCode).code
-      prefs[Keys.ONBOARDING_COMPLETED] = true
+      prefs[displayNameKey] = displayName.trim().ifBlank { "Alex" }
+      prefs[preferredCurrencyKey] = CurrencyOption.fromCode(currencyCode).code
+      prefs[onboardingCompletedKey] = true
+      prefs[hasCompletedTourKey] = true
     }
   }
 
   suspend fun markOnboardingSkipped() {
     context.dataStore.edit { prefs ->
-      prefs[Keys.ONBOARDING_COMPLETED] = true
+      prefs[onboardingCompletedKey] = true
+      prefs[hasCompletedTourKey] = true
     }
   }
 
   suspend fun markInitialDataSeeded() {
     context.dataStore.edit { prefs ->
-      prefs[Keys.HAS_SEEDED_INITIAL_DATA] = true
+      prefs[hasSeededInitialDataKey] = true
     }
   }
 
   suspend fun enableAppLock(pinHashRecord: String, enableBiometric: Boolean) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.APP_LOCK_ENABLED] = true
-      prefs[Keys.BIOMETRIC_UNLOCK_ENABLED] = enableBiometric
-      prefs[Keys.PIN_HASH_RECORD] = pinHashRecord
-      prefs[Keys.FAILED_PIN_ATTEMPTS] = 0
-      prefs[Keys.PIN_LOCKED_UNTIL_MILLIS] = 0L
+      prefs[appLockEnabledKey] = true
+      prefs[biometricUnlockEnabledKey] = enableBiometric
+      prefs[pinHashRecordKey] = pinHashRecord
+      prefs[failedPinAttemptsKey] = 0
+      prefs[pinLockedUntilMillisKey] = 0L
     }
   }
 
   suspend fun updatePin(pinHashRecord: String) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.PIN_HASH_RECORD] = pinHashRecord
-      prefs[Keys.FAILED_PIN_ATTEMPTS] = 0
-      prefs[Keys.PIN_LOCKED_UNTIL_MILLIS] = 0L
+      prefs[pinHashRecordKey] = pinHashRecord
+      prefs[failedPinAttemptsKey] = 0
+      prefs[pinLockedUntilMillisKey] = 0L
     }
   }
 
   suspend fun setBiometricUnlockEnabled(enabled: Boolean) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.BIOMETRIC_UNLOCK_ENABLED] = enabled
+      prefs[biometricUnlockEnabledKey] = enabled
     }
   }
 
   suspend fun disableAppLock() {
     context.dataStore.edit { prefs ->
-      prefs[Keys.APP_LOCK_ENABLED] = false
-      prefs[Keys.BIOMETRIC_UNLOCK_ENABLED] = false
-      prefs.remove(Keys.PIN_HASH_RECORD)
-      prefs[Keys.FAILED_PIN_ATTEMPTS] = 0
-      prefs[Keys.PIN_LOCKED_UNTIL_MILLIS] = 0L
+      prefs[appLockEnabledKey] = false
+      prefs[biometricUnlockEnabledKey] = false
+      prefs.remove(pinHashRecordKey)
+      prefs[failedPinAttemptsKey] = 0
+      prefs[pinLockedUntilMillisKey] = 0L
     }
   }
 
   suspend fun recordFailedPinAttempt(attempts: Int, lockedUntilMillis: Long) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.FAILED_PIN_ATTEMPTS] = attempts
-      prefs[Keys.PIN_LOCKED_UNTIL_MILLIS] = lockedUntilMillis
+      prefs[failedPinAttemptsKey] = attempts
+      prefs[pinLockedUntilMillisKey] = lockedUntilMillis
     }
   }
 
   suspend fun resetPinAttempts() {
     context.dataStore.edit { prefs ->
-      prefs[Keys.FAILED_PIN_ATTEMPTS] = 0
-      prefs[Keys.PIN_LOCKED_UNTIL_MILLIS] = 0L
+      prefs[failedPinAttemptsKey] = 0
+      prefs[pinLockedUntilMillisKey] = 0L
     }
   }
 
   suspend fun updateBudgetAlertsEnabled(enabled: Boolean) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.BUDGET_ALERTS_ENABLED] = enabled
+      prefs[budgetAlertsEnabledKey] = enabled
     }
   }
 
   suspend fun updateGoalAlertsEnabled(enabled: Boolean) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.GOAL_ALERTS_ENABLED] = enabled
+      prefs[goalAlertsEnabledKey] = enabled
     }
   }
 
   suspend fun updateDailyReminderEnabled(enabled: Boolean) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.DAILY_REMINDER_ENABLED] = enabled
+      prefs[dailyReminderEnabledKey] = enabled
     }
   }
 
   suspend fun updateBudgetWarningThreshold(percent: Int) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.BUDGET_WARNING_THRESHOLD_PERCENT] = AlertThresholdDefaults.sanitizeThreshold(percent)
+      prefs[budgetWarningThresholdKey] = AlertThresholdDefaults.sanitizeThreshold(percent)
     }
   }
 
   suspend fun updateDailyReminderTime(hour24: Int, minute: Int) {
     context.dataStore.edit { prefs ->
-      prefs[Keys.DAILY_REMINDER_HOUR] = hour24.coerceIn(0, 23)
-      prefs[Keys.DAILY_REMINDER_MINUTE] = minute.coerceIn(0, 59)
+      prefs[dailyReminderHourKey] = hour24.coerceIn(0, 23)
+      prefs[dailyReminderMinuteKey] = minute.coerceIn(0, 59)
+    }
+  }
+
+  suspend fun getLastActiveUserId(): String? =
+    context.dataStore.data
+      .catch { err ->
+        if (err is IOException) emit(emptyPreferences()) else throw err
+      }
+      .map { prefs -> prefs[lastActiveUserIdKey]?.takeIf { it.isNotBlank() } }
+      .first()
+
+  suspend fun setLastActiveUserId(uid: String?) {
+    context.dataStore.edit { prefs ->
+      if (uid.isNullOrBlank()) {
+        prefs.remove(lastActiveUserIdKey)
+      } else {
+        prefs[lastActiveUserIdKey] = uid
+      }
     }
   }
 }

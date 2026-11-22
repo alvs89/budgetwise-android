@@ -107,11 +107,11 @@ object HelpCenterCatalog {
       keywords = listOf("csv", "pdf", "excel", "sheets", "statement", "share", "download", "backup"),
     ),
     HelpFaqItem(
-      id = "demo_vs_clear_data",
+      id = "clear_all_data",
       topic = HelpTopic.DATA_EXPORT,
-      question = "What is the difference between Demonstration Data and Clear All?",
-      answer = "Reset to Demonstration Data replaces your synced records with sample transactions, budgets, and goals so you can test charts and features freely. Clear All Financial Records permanently deletes all transactions, budgets, savings goals, and custom categories in your account so you can start completely fresh.",
-      keywords = listOf("sample", "reset", "erase", "delete all", "fresh start", "wipe"),
+      question = "How do I start fresh or clear all financial records?",
+      answer = "Open Settings → Data Management and tap Clear All Financial Records. This permanently erases your transactions, monthly budgets, savings goals, and custom categories while keeping your 30 default categories ready for a clean ₱0.00 start.",
+      keywords = listOf("reset", "erase", "delete all", "fresh start", "wipe", "clear"),
     ),
   )
 

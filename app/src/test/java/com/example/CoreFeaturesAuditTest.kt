@@ -274,12 +274,13 @@ class CoreFeaturesAuditTest {
     val viewModel = BudgetWiseViewModel(app, stubChatService)
     val month = YearMonthKey(2026, 11)
 
-    viewModel.clearAllRecords()
     withTimeout(5_000L) {
-      viewModel.uiState.first {
-        !it.isLoading &&
-          it.preferences.hasSeededInitialData &&
-          it.allTransactions.isEmpty()
+      viewModel.uiState.first { !it.isLoading && it.preferences.hasSeededInitialData }
+    }
+    if (viewModel.uiState.value.allTransactions.isNotEmpty()) {
+      viewModel.clearAllRecords()
+      withTimeout(5_000L) {
+        viewModel.uiState.first { it.allTransactions.isEmpty() }
       }
     }
     viewModel.selectMonth(month)

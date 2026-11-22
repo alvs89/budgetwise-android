@@ -12,8 +12,10 @@
           "enum": ["PHP", "USD", "KRW", "JPY", "EUR", "GBP", "SGD", "AUD", "CAD", "CNY", "HKD", "TWD", "THB", "MYR", "IDR", "VND", "INR", "CHF"],
           "description": "ISO 4217 currency code."
         },
-        "onboardingCompleted": { "type": "boolean", "description": "Whether the new-user Welcome Guide has been completed." },
-        "initializedData": { "type": "boolean", "description": "Whether default categories/starter data have been initialized." },
+        "onboardingCompleted": { "type": "boolean", "description": "Whether the live in-app spotlight tour has been completed." },
+        "initializedData": { "type": "boolean", "description": "Whether default categories have been initialized." },
+        "photoUrl": { "type": "string", "description": "Optional synced Google profile photo URL." },
+        "customPhotoBase64": { "type": "string", "description": "Optional compressed JPEG Base64 custom profile avatar synced across devices." },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of profile creation." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last profile update." }
       },

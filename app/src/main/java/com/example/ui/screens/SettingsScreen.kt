@@ -1,7 +1,19 @@
 package com.example.ui.screens
 
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,12 +38,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.DeleteForever
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Fingerprint
@@ -39,12 +54,15 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockReset
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Pin
-import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -59,16 +77,21 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -77,17 +100,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.R
 import com.example.data.cloud.CloudSyncStatus
+import com.example.data.cloud.ProfilePhotoProcessor
 import com.example.domain.ThemeMode
 import com.example.domain.TransactionType
 import com.example.ui.components.ConfirmationDialog
 import com.example.ui.components.CurrencyDropdown
+import com.example.ui.components.LocalIsAppLocked
 import com.example.ui.components.PinDialogMode
 import com.example.ui.components.PinSetupOrVerifyDialog
+import com.example.ui.components.ProfilePhotoCropDialog
 import com.example.ui.components.budgetWiseSwitchColors
 import com.example.ui.components.isBiometricAuthAvailable
 import com.example.ui.viewmodel.BudgetWiseUiState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,36 +139,107 @@ fun SettingsScreen(
   onOpenNotificationsSettings: () -> Unit,
   onOpenHelpCenter: () -> Unit,
   onExportData: () -> Unit,
-  onResetDemoData: () -> Unit,
   onClearAllData: () -> Unit,
   onSignOut: () -> Unit = {},
+  onPickProfilePhotoUri: (Uri) -> Unit = {},
+  onSaveCroppedProfilePhoto: (
+    bitmap: Bitmap,
+    scale: Float,
+    offsetXNorm: Float,
+    offsetYNorm: Float,
+    onFinished: (Boolean) -> Unit,
+  ) -> Unit = { _, _, _, _, onFinished -> onFinished(false) },
+  onShowErrorToast: (String) -> Unit = {},
+  onUseGooglePhoto: () -> Unit = {},
+  onRemoveProfilePhoto: () -> Unit = {},
+  onVerifyCloudSync: () -> Unit = {},
+  onSuppressNextBackgroundLock: () -> Unit = {},
 ) {
   val context = LocalContext.current
+  val coroutineScope = rememberCoroutineScope()
+  val isAppLocked = LocalIsAppLocked.current
   val biometricAvailable = remember(context) { isBiometricAuthAvailable(context) }
 
   var nameInput by remember(uiState.preferences.displayName) {
     mutableStateOf(uiState.preferences.displayName)
   }
-  var showResetConfirm by remember { mutableStateOf(false) }
   var showClearConfirm by remember { mutableStateOf(false) }
   var showSignOutConfirm by remember { mutableStateOf(false) }
+  var showPhotoActionsDialog by remember { mutableStateOf(false) }
+  var pendingCropBitmap by remember { mutableStateOf<Bitmap?>(null) }
+  var isDecodingPickedPhoto by remember { mutableStateOf(false) }
   var activePinDialogMode by remember { mutableStateOf<PinDialogMode?>(null) }
 
-  if (showResetConfirm) {
-    ConfirmationDialog(
-      title = "Reset Demonstration Data?",
-      message = "This replaces your current transactions, budgets, and savings goals with the BudgetWise demonstration dataset.",
-      confirmLabel = "Reset Data",
-      isDestructive = false,
-      onConfirm = {
-        onResetDemoData()
-        showResetConfirm = false
+  val photoPickerLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.PickVisualMedia(),
+  ) { pickedUri ->
+    if (pickedUri != null) {
+      isDecodingPickedPhoto = true
+      coroutineScope.launch {
+        val decoded = withContext(Dispatchers.IO) {
+          ProfilePhotoProcessor.decodeEditableBitmap(context.applicationContext, pickedUri)
+        }
+        isDecodingPickedPhoto = false
+        if (decoded != null) {
+          pendingCropBitmap = decoded
+        } else {
+          onShowErrorToast(context.getString(R.string.crop_photo_read_error))
+        }
+      }
+    }
+  }
+
+  LaunchedEffect(isAppLocked) {
+    if (isAppLocked) {
+      showClearConfirm = false
+      showSignOutConfirm = false
+      showPhotoActionsDialog = false
+      pendingCropBitmap = null
+      activePinDialogMode = null
+    }
+  }
+
+  val cropBitmap = pendingCropBitmap
+  if (cropBitmap != null && !cropBitmap.isRecycled && !isAppLocked) {
+    ProfilePhotoCropDialog(
+      bitmap = cropBitmap,
+      isSaving = uiState.isUpdatingPhoto,
+      onCancel = { pendingCropBitmap = null },
+      onSaveCrop = { scale, offsetXNorm, offsetYNorm ->
+        onSaveCroppedProfilePhoto(cropBitmap, scale, offsetXNorm, offsetYNorm) { succeeded ->
+          if (succeeded) {
+            pendingCropBitmap = null
+          }
+        }
       },
-      onDismiss = { showResetConfirm = false },
     )
   }
 
-  if (showClearConfirm) {
+  if (showPhotoActionsDialog && !isAppLocked) {
+    ProfilePhotoActionDialog(
+      hasCustomPhoto = uiState.customPhotoBase64.isNotBlank(),
+      hasAnyPhoto = uiState.customPhotoBase64.isNotBlank() || uiState.profilePhotoUrl.isNotBlank(),
+      hasGooglePhoto = !uiState.googlePhotoUrl.isNullOrBlank(),
+      onChooseFromGallery = {
+        showPhotoActionsDialog = false
+        onSuppressNextBackgroundLock()
+        photoPickerLauncher.launch(
+          PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+      },
+      onUseGooglePhoto = {
+        showPhotoActionsDialog = false
+        onUseGooglePhoto()
+      },
+      onRemovePhoto = {
+        showPhotoActionsDialog = false
+        onRemoveProfilePhoto()
+      },
+      onDismiss = { showPhotoActionsDialog = false },
+    )
+  }
+
+  if (showClearConfirm && !isAppLocked) {
     ConfirmationDialog(
       title = "Clear All Financial Records?",
       message = "This permanently deletes all transactions, budgets, savings goals, and custom categories in your BudgetWise account. This cannot be undone.",
@@ -150,7 +252,7 @@ fun SettingsScreen(
     )
   }
 
-  if (showSignOutConfirm) {
+  if (showSignOutConfirm && !isAppLocked) {
     ConfirmationDialog(
       title = stringResource(R.string.settings_sign_out_confirm_title),
       message = stringResource(R.string.settings_sign_out_confirm_message),
@@ -164,25 +266,27 @@ fun SettingsScreen(
     )
   }
 
-  activePinDialogMode?.let { mode ->
-    PinSetupOrVerifyDialog(
-      mode = mode,
-      biometricAvailable = biometricAvailable,
-      onVerifyCurrentPin = onVerifyCurrentPin,
-      onCreatePin = { pin, enableBio ->
-        onEnableAppLockWithPin(pin, enableBio)
-        activePinDialogMode = null
-      },
-      onChangePin = { newPin ->
-        onChangeAppPin(newPin)
-        activePinDialogMode = null
-      },
-      onDisableAppLock = {
-        onDisableAppLock()
-        activePinDialogMode = null
-      },
-      onDismiss = { activePinDialogMode = null },
-    )
+  if (!isAppLocked) {
+    activePinDialogMode?.let { mode ->
+      PinSetupOrVerifyDialog(
+        mode = mode,
+        biometricAvailable = biometricAvailable,
+        onVerifyCurrentPin = onVerifyCurrentPin,
+        onCreatePin = { pin, enableBio ->
+          onEnableAppLockWithPin(pin, enableBio)
+          activePinDialogMode = null
+        },
+        onChangePin = { newPin ->
+          onChangeAppPin(newPin)
+          activePinDialogMode = null
+        },
+        onDisableAppLock = {
+          onDisableAppLock()
+          activePinDialogMode = null
+        },
+        onDismiss = { activePinDialogMode = null },
+      )
+    }
   }
 
   val subtleDividerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
@@ -266,8 +370,12 @@ fun SettingsScreen(
               CloudAccountBanner(
                 displayName = uiState.preferences.displayName,
                 email = uiState.accountEmail,
+                profilePhotoUrl = uiState.profilePhotoUrl,
+                customPhotoBase64 = uiState.customPhotoBase64,
+                isUpdatingPhoto = uiState.isUpdatingPhoto || isDecodingPickedPhoto,
                 syncStatus = uiState.syncStatus,
-                onSignOutClick = { showSignOutConfirm = true },
+                onAvatarClick = { showPhotoActionsDialog = true },
+                onVerifySyncClick = onVerifyCloudSync,
               )
               HorizontalDivider(
                 modifier = Modifier.padding(vertical = 14.dp),
@@ -586,21 +694,6 @@ fun SettingsScreen(
                 )
               }
               OutlinedButton(
-                onClick = { showResetConfirm = true },
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.75f)),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .heightIn(min = 48.dp)
-                  .testTag("reset_demo_button"),
-              ) {
-                Icon(Icons.Rounded.RestartAlt, contentDescription = null)
-                Text(
-                  text = "Reset to Demonstration Data",
-                  modifier = Modifier.padding(start = 8.dp),
-                )
-              }
-              OutlinedButton(
                 onClick = { showClearConfirm = true },
                 shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
@@ -620,6 +713,37 @@ fun SettingsScreen(
                   modifier = Modifier.padding(start = 8.dp),
                 )
               }
+            }
+          }
+        }
+
+        // Bottom Sign Out Action (industry-standard placement above privacy/version footer)
+        if (!uiState.accountEmail.isNullOrBlank()) {
+          item {
+            OutlinedButton(
+              onClick = { showSignOutConfirm = true },
+              shape = RoundedCornerShape(14.dp),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.40f)),
+              contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("settings_sign_out_button"),
+            ) {
+              Icon(
+                imageVector = Icons.AutoMirrored.Rounded.Logout,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(18.dp),
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = stringResource(R.string.settings_sign_out_action),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 1,
+                softWrap = false,
+              )
             }
           }
         }
@@ -778,10 +902,20 @@ private fun SettingsCardHeader(
 private fun CloudAccountBanner(
   displayName: String,
   email: String,
+  profilePhotoUrl: String,
+  customPhotoBase64: String,
+  isUpdatingPhoto: Boolean,
   syncStatus: CloudSyncStatus,
-  onSignOutClick: () -> Unit,
+  onAvatarClick: () -> Unit,
+  onVerifySyncClick: () -> Unit,
 ) {
+  val context = LocalContext.current
   val initial = displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "B"
+  val customPhotoBytes = remember(customPhotoBase64) {
+    ProfilePhotoProcessor.decodeBase64ToBytes(customPhotoBase64)
+  }
+  val avatarModel: Any? = customPhotoBytes ?: profilePhotoUrl.takeIf { it.isNotBlank() }
+
   val (syncIcon, syncLabel, syncTint) = when (syncStatus) {
     CloudSyncStatus.SYNCED -> Triple(
       Icons.Rounded.CloudDone,
@@ -805,46 +939,124 @@ private fun CloudAccountBanner(
     )
   }
 
+  val spinTransition = rememberInfiniteTransition(label = "sync_refresh_spin")
+  val refreshRotation by spinTransition.animateFloat(
+    initialValue = 0f,
+    targetValue = 360f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 900, easing = LinearEasing),
+      repeatMode = RepeatMode.Restart,
+    ),
+    label = "sync_refresh_angle",
+  )
+
   Column(
     modifier = Modifier
       .fillMaxWidth()
       .testTag("settings_cloud_account_section"),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
+    // Tight Identity Row: 60.dp avatar + tightly grouped email & 28.dp interactive sync pill
     Row(
       modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       Box(
         modifier = Modifier
-          .size(42.dp)
-          .clip(CircleShape)
-          .background(MaterialTheme.colorScheme.primaryContainer),
+          .size(60.dp)
+          .clickable(enabled = !isUpdatingPhoto, onClick = onAvatarClick)
+          .testTag("settings_profile_avatar"),
         contentAlignment = Alignment.Center,
       ) {
-        Text(
-          text = initial,
-          style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-          color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
+        Box(
+          modifier = Modifier
+            .size(58.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape),
+          contentAlignment = Alignment.Center,
+        ) {
+          Text(
+            text = initial,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+          )
+          if (avatarModel != null) {
+            AsyncImage(
+              model = ImageRequest.Builder(context)
+                .data(avatarModel)
+                .crossfade(true)
+                .build(),
+              contentDescription = stringResource(R.string.settings_avatar_edit_cd),
+              contentScale = ContentScale.Crop,
+              modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape),
+            )
+          }
+
+          if (isUpdatingPhoto) {
+            Box(
+              modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f)),
+              contentAlignment = Alignment.Center,
+            ) {
+              CircularProgressIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(22.dp),
+              )
+            }
+          }
+        }
+
+        // Crisp 22.dp mint camera edit badge with 2.dp card-surface cutout border ring
+        Box(
+          modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary)
+            .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.CameraAlt,
+            contentDescription = stringResource(R.string.settings_avatar_edit_cd),
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(12.dp),
+          )
+        }
       }
+
       Column(
         modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
       ) {
         Text(
           text = email,
-          style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+          style = MaterialTheme.typography.titleSmall.copy(
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+          ),
           color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.testTag("settings_account_email"),
         )
         Row(
+          modifier = Modifier
+            .height(28.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(syncTint.copy(alpha = 0.14f))
+            .border(0.75.dp, syncTint.copy(alpha = 0.42f), RoundedCornerShape(999.dp))
+            .clickable(onClick = onVerifySyncClick)
+            .padding(horizontal = 10.dp)
+            .testTag("settings_sync_status_badge"),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(5.dp),
-          modifier = Modifier.testTag("settings_sync_status_badge"),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           Icon(
             imageVector = syncIcon,
@@ -853,36 +1065,152 @@ private fun CloudAccountBanner(
             modifier = Modifier.size(14.dp),
           )
           Text(
-            text = syncLabel,
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+            text = if (isUpdatingPhoto) {
+              stringResource(R.string.settings_photo_updating)
+            } else {
+              syncLabel
+            },
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
             color = syncTint,
             maxLines = 1,
+            softWrap = false,
             overflow = TextOverflow.Ellipsis,
+          )
+          Icon(
+            imageVector = Icons.Rounded.Refresh,
+            contentDescription = stringResource(R.string.settings_sync_tap_hint),
+            tint = syncTint.copy(alpha = 0.85f),
+            modifier = Modifier
+              .size(13.dp)
+              .rotate(if (syncStatus == CloudSyncStatus.SYNCING) refreshRotation else 0f),
           )
         }
       }
-      OutlinedButton(
-        onClick = onSignOutClick,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        modifier = Modifier
-          .heightIn(min = 44.dp)
-          .testTag("settings_sign_out_button"),
-      ) {
-        Icon(
-          imageVector = Icons.AutoMirrored.Rounded.Logout,
-          contentDescription = null,
-          modifier = Modifier.size(16.dp),
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-          text = stringResource(R.string.settings_sign_out_action),
-          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-          maxLines = 1,
-          softWrap = false,
-        )
-      }
     }
   }
+}
+
+@Composable
+private fun ProfilePhotoActionDialog(
+  hasCustomPhoto: Boolean,
+  hasAnyPhoto: Boolean,
+  hasGooglePhoto: Boolean,
+  onChooseFromGallery: () -> Unit,
+  onUseGooglePhoto: () -> Unit,
+  onRemovePhoto: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    containerColor = MaterialTheme.colorScheme.surface,
+    titleContentColor = MaterialTheme.colorScheme.onSurface,
+    textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    title = {
+      Text(
+        text = stringResource(R.string.settings_photo_dialog_title),
+        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+      )
+    },
+    text = {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .testTag("profile_photo_action_dialog"),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Text(
+          text = stringResource(R.string.settings_photo_dialog_subtitle),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        FilledTonalButton(
+          onClick = onChooseFromGallery,
+          shape = RoundedCornerShape(12.dp),
+          colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+          ),
+          modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .testTag("photo_action_choose_gallery"),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.PhotoLibrary,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+          )
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(
+            text = stringResource(R.string.settings_photo_choose_gallery),
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+
+        if (hasGooglePhoto && (hasCustomPhoto || !hasAnyPhoto)) {
+          OutlinedButton(
+            onClick = onUseGooglePhoto,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = 48.dp)
+              .testTag("photo_action_use_google"),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.AccountCircle,
+              contentDescription = null,
+              modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = stringResource(R.string.settings_photo_use_google),
+              style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+
+        if (hasAnyPhoto) {
+          OutlinedButton(
+            onClick = onRemovePhoto,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = 48.dp)
+              .testTag("photo_action_remove"),
+          ) {
+            Icon(
+              imageVector = Icons.Rounded.DeleteOutline,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.error,
+              modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = stringResource(R.string.settings_photo_remove),
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = onDismiss) {
+        Text(stringResource(R.string.pin_keypad_cancel))
+      }
+    },
+  )
 }
