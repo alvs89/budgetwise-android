@@ -213,18 +213,13 @@ fun BudgetWiseRoot(
 
   var isSigningIn by remember { mutableStateOf(false) }
   var signInError by remember { mutableStateOf<String?>(null) }
-  var attemptedAutoSignIn by rememberSaveable { mutableStateOf(false) }
   var isRequestingAccountUpgrade by rememberSaveable { mutableStateOf(false) }
   var authSessionNonce by rememberSaveable { mutableIntStateOf(0) }
   val coroutineScope = rememberCoroutineScope()
 
-  LaunchedEffect(currentUser, isPrefsLoaded, localPrefs.isOfflineGuestMode, attemptedAutoSignIn) {
+  LaunchedEffect(currentUser, isPrefsLoaded, localPrefs.isOfflineGuestMode) {
     if (!isPrefsLoaded) return@LaunchedEffect
-    if (currentUser == null && !localPrefs.isOfflineGuestMode && !attemptedAutoSignIn) {
-      attemptedAutoSignIn = true
-      val activityCtx = context.findActivity() ?: context
-      GoogleAuthHelper.attemptAutoSignIn(activityCtx, auth)
-    } else if (currentUser != null) {
+    if (currentUser != null) {
       isSigningIn = false
       signInError = null
       isRequestingAccountUpgrade = false
